@@ -75,6 +75,7 @@ Aracın klasöründe bir terminal açıp:
 ```bat
 Check-Drivers.bat -ScanOnly          :: sadece listele, hiçbir şey kurma
 Check-Drivers.bat -IncludeDevices    :: telefon / USB aksesuar sürücülerini de göster
+Check-Drivers.bat -NoBackup          :: kurulumdan önce sürücü yedeği alma
 ```
 
 Ya da script'i doğrudan çalıştır:
@@ -160,6 +161,7 @@ Bilgisayarı YENİDEN BAŞLATIN.
 - **Eski sürüme düşürme yok.** NVIDIA güncellemesi sadece kurulu sürücüden daha yeniyse önerilir.
 - **Ayarlar korunur.** NVIDIA sürücüsü temiz kurulum olarak değil, yükseltme olarak kurulur; NVIDIA Denetim Masası ayarların kalır.
 - **Başarı varsayılmaz, kontrol edilir.** NVIDIA kurulumundan sonra kurulum programının çıkış koduna güvenilmez; kurulu sürüm yeniden okunur.
+- **Mevcut sürücüler yedeklenir.** Kurulumdan önce, seçilen aygıtların şu an kullandığı sürücü paketleri `pnputil` ile `%ProgramData%\PC-Driver-Check\backups\<tarih>` klasörüne aktarılır. Sadece üçüncü parti paketler (`oem*.inf`) yedeklenir; Windows'un kendi sürücüleri zaten sistemde durur. En yeni iki yedek tutulur (tek bir NVIDIA paketi yaklaşık 3 GB) ve 10 GB'tan az boş alan varsa yedek atlanır. `-NoBackup` ile kapatılabilir.
 - **Her şey kaydedilir:** script'in yanındaki `logs\PC-Driver-Check_<tarih>.log` dosyasına.
 
 ## Güncellemeyi geri alma
@@ -169,6 +171,14 @@ Bilgisayarı YENİDEN BAŞLATIN.
 3. Sihirbazı takip et; bilgisayar yeniden başlar.
 
 Tek bir aygıt için: **Aygıt Yöneticisi → aygıt → Özellikler → Sürücü → Sürücüyü Geri Al**.
+
+Sürücü yedeğinden (araç tam klasörü yazar), yönetici olarak açılmış bir terminalde:
+
+```bat
+pnputil /add-driver "C:\ProgramData\PC-Driver-Check\backups\<tarih>\*.inf" /subdirs /install
+```
+
+Sonra yeniden başlat. Windows yine yeni sürücüyü seçerse: **Aygıt Yöneticisi → aygıt → Sürücüyü güncelleştir → Bilgisayarımdaki sürücülere göz at → Listeden seçmeme izin ver** ile eski sürümü seç.
 
 ## Neler yapmaz
 

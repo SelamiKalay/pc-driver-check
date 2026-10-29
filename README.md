@@ -75,6 +75,7 @@ Run from a terminal in the tool's folder:
 ```bat
 Check-Drivers.bat -ScanOnly          :: only list updates, install nothing
 Check-Drivers.bat -IncludeDevices    :: also show phone / USB accessory drivers
+Check-Drivers.bat -NoBackup          :: skip the driver backup before installing
 ```
 
 Or call the script directly:
@@ -160,6 +161,7 @@ Shown on every run, including `-ScanOnly`. It only reads information; nothing is
 - **No downgrades.** NVIDIA updates are offered only if they are newer than the installed driver.
 - **Settings are kept.** The NVIDIA driver is installed as an upgrade, not a clean install, so your NVIDIA Control Panel settings stay.
 - **Success is checked, not assumed.** After an NVIDIA install the tool reads the installed version again instead of trusting the installer's exit code.
+- **Current drivers are backed up.** Before installing, the driver packages the selected devices use now are exported with `pnputil` to `%ProgramData%\PC-Driver-Check\backups\<date>`. Only third-party packages (`oem*.inf`) are exported; Windows' own drivers are always on the system anyway. The two newest backups are kept (an NVIDIA package alone is about 3 GB), and the backup is skipped if less than 10 GB is free. Turn it off with `-NoBackup`.
 - **Everything is logged** to `logs\PC-Driver-Check_<date>.log` next to the script.
 
 ## Undoing an update
@@ -169,6 +171,14 @@ Shown on every run, including `-ScanOnly`. It only reads information; nothing is
 3. Follow the wizard; the PC restarts.
 
 For a single device you can also use **Device Manager → device → Properties → Driver → Roll Back Driver**.
+
+From the driver backup (the tool prints the exact folder), in an administrator terminal:
+
+```bat
+pnputil /add-driver "C:\ProgramData\PC-Driver-Check\backups\<date>\*.inf" /subdirs /install
+```
+
+Then restart. If Windows keeps picking the newer driver, use **Device Manager → device → Update driver → Browse my computer → Let me pick** and choose the older version.
 
 ## What it does not do
 

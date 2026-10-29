@@ -3,6 +3,10 @@
 $ErrorActionPreference = 'Stop'
 $script = Join-Path $PSScriptRoot '..\PC-Driver-Check.ps1'
 
+# Kullanicilarin cogu Turkce Windows'ta: buyuk/kucuk harf duyarsiz regex orada I'yi i'ye degil noktasiz i'ye cevirir
+# ("OEM12.INF" -match "oem\d+\.inf" false olur). CI en-US oldugu icin testler hep tr-TR ile calisir.
+[Threading.Thread]::CurrentThread.CurrentCulture = 'tr-TR'
+
 $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($script, [ref]$null, [ref]$errors)
 if ($errors.Count) { $errors | ForEach-Object { Write-Host "PARSE: $_" }; exit 1 }
@@ -21,7 +25,7 @@ function Check($name, $got, $want) {
     Write-Host ("{0} {1,-40} got=[{2}] want=[{3}]" -f $(if ($ok) { 'PASS' } else { 'FAIL' }), $name, ($got -join ','), ($want -join ','))
 }
 
-Write-Host "PowerShell $($PSVersionTable.PSVersion)"
+Write-Host "PowerShell $($PSVersionTable.PSVersion), culture $([Threading.Thread]::CurrentThread.CurrentCulture.Name)"
 
 Write-Host '--- ConvertTo-NvidiaVersion'
 Check '32.0.16.2101' (ConvertTo-NvidiaVersion '32.0.16.2101') '621.01'
@@ -38,6 +42,7 @@ Check 'Android (OtherHardware)' (Test-AccessoryDriver 'OtherHardware' 'SAMSUNG A
 Check 'Apple USB' (Test-AccessoryDriver 'USB' 'Apple, Inc. USBDevice Driver Update') $true
 Check 'Intel ComputeAccelerator' (Test-AccessoryDriver 'ComputeAccelerator' 'Intel Corporation ComputeAccelerator Driver Update') $false
 Check 'Realtek audio extension' (Test-AccessoryDriver 'MEDIA' 'Realtek Semiconductor Corp. Extension') $false
+Check 'upper-case MOBILE (Turkish I)' (Test-AccessoryDriver 'USB' 'ACME MOBILE COMPOSITE DEVICE') $true
 
 Write-Host '--- Read-Selection'
 Check '"1,3" of 5' (Read-Selection '1,3' 5) @(1, 3)
@@ -145,6 +150,23 @@ $warnings = Get-DiskWarnings (& $disk 'Healthy' 92 40 0)
 $script:Lang = 'en'   # M() bunu okur
 $text = foreach ($w in $warnings) { $a = $w.Args; M $w.Key @a }
 Check 'warning renders as text' $text "SSD: 92% of the SSD's rated life is used. Back up and plan a replacement."
+
+Write-Host '--- Get-BackupInfNames'
+$entities = @(
+    [pscustomobject]@{ DeviceID = 'PCI\VEN_10DE&DEV_2820\4&1'; HardwareID = @('PCI\VEN_10DE&DEV_2820&SUBSYS_A7621558'); CompatibleID = @('PCI\CC_0300') }
+    [pscustomobject]@{ DeviceID = 'PCI\VEN_8086&DEV_7E28\3&2'; HardwareID = @('PCI\VEN_8086&DEV_7E28&REV_04'); CompatibleID = @('PCI\VEN_8086&DEV_7E28') }
+    [pscustomobject]@{ DeviceID = 'HDAUDIO\FUNC_01\5&3'; HardwareID = @('HDAUDIO\FUNC_01&VEN_10EC'); CompatibleID = @() }
+)
+$signed = @(
+    [pscustomobject]@{ DeviceID = 'PCI\VEN_10DE&DEV_2820\4&1'; InfName = 'oem91.inf' }
+    [pscustomobject]@{ DeviceID = 'PCI\VEN_8086&DEV_7E28\3&2'; InfName = 'OEM12.INF' }
+    [pscustomobject]@{ DeviceID = 'HDAUDIO\FUNC_01\5&3'; InfName = 'hdaudio.inf' }
+)
+Check 'NVIDIA item by device id' (Get-BackupInfNames @([pscustomobject]@{ DeviceId = 'PCI\VEN_10DE&DEV_2820\4&1' }) $entities $signed) 'oem91.inf'
+Check 'WU item via compatible id, lower-cased' (Get-BackupInfNames @([pscustomobject]@{ HardwareId = 'pci\ven_8086&dev_7e28' }) $entities $signed) 'oem12.inf'
+Check 'inbox driver is skipped' (Get-BackupInfNames @([pscustomobject]@{ HardwareId = 'HDAUDIO\FUNC_01&VEN_10EC' }) $entities $signed).Count 0
+Check 'device not present -> nothing' (Get-BackupInfNames @([pscustomobject]@{ HardwareId = 'USB\VID_FFFF' }) $entities $signed).Count 0
+Check 'two items, unique + sorted' (Get-BackupInfNames @([pscustomobject]@{ HardwareId = 'PCI\VEN_8086&DEV_7E28&REV_04' }, [pscustomobject]@{ DeviceId = 'PCI\VEN_10DE&DEV_2820\4&1' }, [pscustomobject]@{ DeviceId = 'PCI\VEN_10DE&DEV_2820\4&1' }) $entities $signed) @('oem12.inf', 'oem91.inf')
 
 Write-Host '--- Messages'
 $missing = @($Msg.tr.Keys | Where-Object { -not $Msg.en.ContainsKey($_) }) + @($Msg.en.Keys | Where-Object { -not $Msg.tr.ContainsKey($_) })

@@ -15,6 +15,10 @@
 .PARAMETER IncludeDevices
     Also show phone / USB accessory drivers (hidden by default).
 
+.PARAMETER NoBackup
+    Do not back up the current drivers of the devices being updated
+    (by default they are exported to %ProgramData%\PC-Driver-Check\backups).
+
 .NOTES
     Exit codes: 0 = done / nothing to do, 1 = error or incomplete scan,
                 2 = some installs failed, 3010 = installed, restart required.
@@ -26,7 +30,8 @@
 #>
 param(
     [switch]$ScanOnly,
-    [switch]$IncludeDevices
+    [switch]$IncludeDevices,
+    [switch]$NoBackup
 )
 
 $ErrorActionPreference = 'Stop'
@@ -95,6 +100,12 @@ $Msg = @{
         RpFailed       = 'Geri yükleme noktası oluşturulamadı ({0}).'
         RpContinue     = 'Yine de kurulsun mu? (E/H)'
         Cancelled      = 'İptal edildi.'
+        BackupCreating = 'Güncellenecek aygıtların mevcut sürücüleri yedekleniyor...'
+        BackupOk       = 'Sürücü yedeği ({1}): {0}'
+        BackupHow      = 'Geri yüklemek için: pnputil /add-driver "{0}\*.inf" /subdirs /install'
+        BackupNone     = 'Yedeklenecek üçüncü parti sürücü yok (aygıtlar Windows''un kendi sürücüsünü kullanıyor ya da henüz sürücüsü yok).'
+        BackupNoSpace  = 'Sürücü yedeği atlandı: {0} sürücüsünde sadece {1} GB boş alan var.'
+        BackupFailed   = 'Sürücü yedeği alınamadı ({0}); kuruluma devam ediliyor.'
         Installing     = 'Kuruluyor: {0}'
         Downloading    = 'İndiriliyor: {0}'
         WuOk           = 'Kuruldu: {0}'
@@ -169,6 +180,12 @@ $Msg = @{
         RpFailed       = 'Could not create a restore point ({0}).'
         RpContinue     = 'Install anyway? (Y/N)'
         Cancelled      = 'Cancelled.'
+        BackupCreating = 'Backing up the current drivers of the devices being updated...'
+        BackupOk       = 'Driver backup ({1}): {0}'
+        BackupHow      = 'To restore: pnputil /add-driver "{0}\*.inf" /subdirs /install'
+        BackupNone     = 'No third-party drivers to back up (the devices use Windows'' own driver or have none yet).'
+        BackupNoSpace  = 'Driver backup skipped: only {1} GB free on drive {0}.'
+        BackupFailed   = 'Could not back up the drivers ({0}); continuing with the install.'
         Installing     = 'Installing: {0}'
         Downloading    = 'Downloading: {0}'
         WuOk           = 'Installed: {0}'
@@ -221,9 +238,11 @@ function Get-NormalizedGpuName([string]$name) {
     ($name -replace '^\s*NVIDIA\s+', '').Trim().ToLowerInvariant()
 }
 
-# Phone / USB accessory drivers: offered only because a phone was plugged in once
+# Phone / USB accessory drivers: offered only because a phone was plugged in once.
+# CultureInvariant: with -match, Turkish Windows would not match "MOBILE" to "Mobile" (I -> ı)
 function Test-AccessoryDriver($driverClass, [string]$title) {
-    ($driverClass -eq 'OtherHardware') -or ($title -match '(?i)\b(Android|Apple|iPhone|iPad|MTP|ADB|Mobile|Phone|Modem)\b')
+    ($driverClass -eq 'OtherHardware') -or
+        [regex]::IsMatch($title, '\b(Android|Apple|iPhone|iPad|MTP|ADB|Mobile|Phone|Modem)\b', 'IgnoreCase, CultureInvariant')
 }
 
 # "1,3", "1-3", "A"/"T" (all), "" (none) -> index list (1-based), or $null if invalid
@@ -287,6 +306,21 @@ function Get-DiskWarnings($disk) {
     ,$w
 }
 
+# Updates about to be installed -> oem*.inf packages their devices use now.
+# WU items carry the hardware ID they target, NVIDIA items the GPU's device ID.
+# Inbox drivers (e.g. hdaudbus.inf) are part of Windows and cannot be exported.
+function Get-BackupInfNames($chosen, $entities, $signed) {
+    $ids = @($chosen | ForEach-Object { $_.DeviceId } | Where-Object { $_ })
+    $hw = @($chosen | ForEach-Object { $_.HardwareId } | Where-Object { $_ })
+    if ($hw) {
+        $ids += @($entities | Where-Object { @(@($_.HardwareID) + @($_.CompatibleID) | Where-Object { $_ -in $hw }).Count } |
+            ForEach-Object { $_.DeviceID })
+    }
+    # Lower-case first, then -cmatch: a plain -match on "OEM12.INF" fails on Turkish Windows (I -> ı)
+    ,@($signed | Where-Object { $_.DeviceID -in $ids } | ForEach-Object { ([string]$_.InfName).ToLowerInvariant() } |
+        Where-Object { $_ -cmatch '^oem\d+\.inf$' } | Sort-Object -Unique)
+}
+
 # ------------------------------------------------------------------
 # Hardware health (read-only)
 # ------------------------------------------------------------------
@@ -338,6 +372,7 @@ function Find-WUDrivers {
             Manufacturer = $u.DriverManufacturer
             Date         = $u.DriverVerDate
             SizeMB       = [double]$u.MaxDownloadSize / 1MB
+            HardwareId   = $u.DriverHardwareID
             Update       = $u
         }
     }
@@ -364,6 +399,7 @@ function Find-NvidiaDriver($gpu, [int]$osId) {
         Status    = if ([version]$latest -gt [version]$installed) { 'Update' } else { 'Current' }
         Source    = 'NVIDIA'
         Gpu       = $gpu.Name
+        DeviceId  = $gpu.PNPDeviceID
         Installed = $installed
         Latest    = $latest
         Title     = "$($gpu.Name)  $installed -> $latest"
@@ -396,6 +432,30 @@ function New-RestorePoint {
         if ($null -eq $old) { Remove-ItemProperty $key SystemRestorePointCreationFrequency -EA SilentlyContinue }
         else { Set-ItemProperty $key SystemRestorePointCreationFrequency $old -Type DWord }
     }
+}
+
+# Exports the given oem*.inf packages with pnputil. Not next to the script: that folder may be
+# synced (OneDrive Desktop) and an NVIDIA package alone is ~3 GB.
+function New-DriverBackup([string[]]$infNames) {
+    $base = Join-Path $env:ProgramData 'PC-Driver-Check\backups'
+    $drive = Get-PSDrive ($base.Substring(0, 1))
+    $freeGB = [math]::Round($drive.Free / 1GB, 1)
+    if ($freeGB -lt 10) { Say-Warn (M BackupNoSpace "$($drive.Name):" $freeGB); return }
+
+    $dir = Join-Path $base (Get-Date -Format 'yyyyMMdd_HHmmss')
+    foreach ($inf in $infNames) {
+        $out = Join-Path $dir ($inf -replace '\.inf$')   # one folder per package: no file name clashes
+        New-Item -ItemType Directory $out -Force | Out-Null
+        $text = & pnputil.exe /export-driver $inf $out 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "pnputil $inf ($LASTEXITCODE): $(($text | Select-Object -Last 1))" }
+    }
+    $size = (Get-ChildItem $dir -Recurse -File | Measure-Object Length -Sum).Sum
+    Say-Ok (M BackupOk $dir $(if ($size -ge 1GB) { '{0:N1} GB' -f ($size / 1GB) } else { '{0:N0} MB' -f ($size / 1MB) }))
+    Say-Info (M BackupHow $dir)
+
+    # Keep the two newest backups; each can be several GB
+    Get-ChildItem $base -Directory | Sort-Object Name -Descending | Select-Object -Skip 2 |
+        Remove-Item -Recurse -Force -EA SilentlyContinue
 }
 
 function Install-WUDriver($item) {
@@ -555,6 +615,15 @@ try {
     Say-Info (M RpCreating)
     if (-not (New-RestorePoint)) {
         if ((Read-Host (M RpContinue)) -notmatch "^(?i)$(M YesWord)") { Say-Info (M Cancelled); return }
+    }
+
+    # --- Driver backup (second safety net next to the restore point) ---
+    if (-not $NoBackup) {
+        Say-Info (M BackupCreating)
+        try {
+            $infs = Get-BackupInfNames $chosen (Get-CimInstance Win32_PnPEntity) (Get-CimInstance Win32_PnPSignedDriver)
+            if ($infs.Count) { New-DriverBackup $infs } else { Say-Info (M BackupNone) }
+        } catch { Say-Warn (M BackupFailed $_.Exception.Message) }
     }
 
     # --- Install ---
