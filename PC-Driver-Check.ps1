@@ -47,7 +47,36 @@ $Msg = @{
         Os             = 'Windows'
         Cpu            = 'İşlemci'
         Gpu            = 'Ekran kartı'
-        WuScan         = 'Windows Update taranıyor (1-2 dakika sürebilir)...'
+        Health         = 'Donanım sağlığı'
+        DevNone        = 'Sorunlu aygıt yok.'
+        DevProblem     = 'Sorunlu aygıt: {0} - {1}'
+        DevId          = 'Donanım kimliği (sürücü aramak için): {0}'
+        DevCode1       = 'yapılandırılmamış'
+        DevCode10      = 'başlatılamıyor'
+        DevCode18      = 'sürücü yeniden kurulmalı'
+        DevCode28      = 'sürücü yüklü değil'
+        DevCode31      = 'düzgün çalışmıyor'
+        DevCode43      = 'Windows aygıtı durdurdu (aygıt sorun bildirdi)'
+        DevCode52      = 'sürücü imzası doğrulanamadı'
+        DevCodeOther   = 'hata kodu {0}'
+        Ram            = 'RAM'
+        RamLine        = '{0} GB {1}, {2}/{3} yuva dolu, {4} MT/s'
+        RamSlow        = 'RAM desteklediği hızın altında çalışıyor ({0} / {1} MT/s). Masaüstünde BIOS''ta XMP/EXPO ayarına bakın; işlemci bu hızı desteklemiyorsa bu normaldir.'
+        RamSingle      = 'Tek RAM modülü takılı (tek kanal). Boş yuvaya eş bir modül eklemek performansı artırabilir.'
+        Disk           = 'Disk'
+        DiskLine       = '{0} | {1} {2} | {3} GB | firmware {4}'
+        DiskStats      = 'sağlık: {0} | aşınma: {1} | sıcaklık: {2}'
+        DiskHealthy    = 'iyi'
+        DiskWarning    = 'uyarı'
+        DiskUnhealthy  = 'SAĞLIKSIZ'
+        DiskBad        = '{0}: Windows diskin sağlıklı olmadığını bildiriyor ({1}). Verilerinizi hemen yedekleyin.'
+        DiskErrors     = '{0}: {1} düzeltilemeyen okuma hatası. Verilerinizi yedekleyin.'
+        DiskWearHigh   = '{0}: SSD ömrünün %{1} kadarı kullanılmış. Yedek alın ve değiştirmeyi planlayın.'
+        DiskWearWarn   = '{0}: SSD ömrünün %{1} kadarı kullanılmış, takip edin.'
+        DiskHot        = '{0}: disk sıcak ({1}°C). Havalandırmayı kontrol edin.'
+        HealthFailed   = 'Donanım bilgisi okunamadı: {0}'
+        Unknown        = 'bilinmiyor'
+        WuScan        = 'Windows Update taranıyor (1-2 dakika sürebilir)...'
         WuFailed       = 'Windows Update taranamadı: {0}'
         WuHidden       = '{0} telefon/USB aygıtı sürücüsü gizlendi (göstermek için -IncludeDevices).'
         NvCheck        = 'NVIDIA sürücüsü kontrol ediliyor: {0}'
@@ -92,7 +121,36 @@ $Msg = @{
         Os             = 'Windows'
         Cpu            = 'CPU'
         Gpu            = 'GPU'
-        WuScan         = 'Scanning Windows Update (this can take 1-2 minutes)...'
+        Health         = 'Hardware health'
+        DevNone        = 'No problem devices.'
+        DevProblem     = 'Problem device: {0} - {1}'
+        DevId          = 'Hardware ID (search this to find a driver): {0}'
+        DevCode1       = 'not configured'
+        DevCode10      = 'cannot start'
+        DevCode18      = 'driver must be reinstalled'
+        DevCode28      = 'no driver installed'
+        DevCode31      = 'not working properly'
+        DevCode43      = 'stopped by Windows (device reported a problem)'
+        DevCode52      = 'driver signature could not be verified'
+        DevCodeOther   = 'error code {0}'
+        Ram            = 'RAM'
+        RamLine        = '{0} GB {1}, {2}/{3} slots used, {4} MT/s'
+        RamSlow        = 'RAM runs below its rated speed ({0} / {1} MT/s). On a desktop, check XMP/EXPO in the BIOS; if the CPU does not support that speed, this is normal.'
+        RamSingle      = 'Only one RAM module installed (single channel). Adding a matching module to the free slot can improve performance.'
+        Disk           = 'Disk'
+        DiskLine       = '{0} | {1} {2} | {3} GB | firmware {4}'
+        DiskStats      = 'health: {0} | wear: {1} | temperature: {2}'
+        DiskHealthy    = 'good'
+        DiskWarning    = 'warning'
+        DiskUnhealthy  = 'UNHEALTHY'
+        DiskBad        = '{0}: Windows reports the disk is not healthy ({1}). Back up your data now.'
+        DiskErrors     = '{0}: {1} uncorrectable read error(s). Back up your data.'
+        DiskWearHigh   = '{0}: {1}% of the SSD''s rated life is used. Back up and plan a replacement.'
+        DiskWearWarn   = '{0}: {1}% of the SSD''s rated life is used, keep an eye on it.'
+        DiskHot        = '{0}: disk is hot ({1}°C). Check the cooling.'
+        HealthFailed   = 'Could not read hardware information: {0}'
+        Unknown        = 'unknown'
+        WuScan        = 'Scanning Windows Update (this can take 1-2 minutes)...'
         WuFailed       = 'Windows Update scan failed: {0}'
         WuHidden       = '{0} phone/USB accessory driver(s) hidden (use -IncludeDevices to show).'
         NvCheck        = 'Checking NVIDIA driver: {0}'
@@ -181,6 +239,89 @@ function Read-Selection([string]$text, [int]$count) {
     }
     if (@($picked | Where-Object { $_ -lt 1 -or $_ -gt $count }).Count) { return $null }
     ,@($picked | Sort-Object -Unique)
+}
+
+# Device Manager error code -> message key (22 = disabled, 45 = not plugged in: not shown at all)
+function Get-DeviceProblemKey([int]$code) {
+    if ($code -in 1, 10, 18, 28, 31, 43, 52) { "DevCode$code" } else { 'DevCodeOther' }
+}
+
+# SMBIOS memory type -> name
+function ConvertTo-MemoryType([int]$type) {
+    switch ($type) {
+        24 { 'DDR3' } 26 { 'DDR4' } 29 { 'LPDDR3' } 30 { 'LPDDR4' } 34 { 'DDR5' } 35 { 'LPDDR5' }
+        default { '' }
+    }
+}
+
+# Win32_PhysicalMemory modules + slot count -> one summary
+function Get-MemorySummary($modules, [int]$slots) {
+    $modules = @($modules)
+    $rated = [int]($modules | Measure-Object Speed -Maximum).Maximum
+    $actual = [int](@($modules | Where-Object { $_.ConfiguredClockSpeed -gt 0 }) | Measure-Object ConfiguredClockSpeed -Minimum).Minimum
+    [pscustomobject]@{
+        TotalGB = [math]::Round(($modules | Measure-Object Capacity -Sum).Sum / 1GB)
+        Type    = ConvertTo-MemoryType @($modules)[0].SMBIOSMemoryType
+        Count   = $modules.Count
+        Slots   = [math]::Max($slots, $modules.Count)
+        Rated   = $rated
+        Actual  = $actual
+        Slow    = $actual -gt 0 -and $rated -gt 0 -and $actual -lt $rated
+        Single  = $modules.Count -eq 1 -and $slots -ge 2
+    }
+}
+
+# Disk (Get-DiskInfo shape) -> list of @{ Key; Args } warnings, most serious first.
+# 0 / missing counters mean "not reported" (common on SATA and USB disks), not "perfect".
+function Get-DiskWarnings($disk) {
+    # Wear is the NVMe "percentage used" (100 = rated life reached, can go above)
+    $wearCritical = 90
+    $wearWarn     = 70
+    $tempWarn     = 70   # °C; most NVMe drives start throttling around 70-80
+    $w = @()
+    if ($disk.Health -and $disk.Health -ne 'Healthy') { $w += @{ Key = 'DiskBad'; Args = @($disk.Name, $disk.Health) } }
+    if ($disk.ReadErrors -gt 0) { $w += @{ Key = 'DiskErrors'; Args = @($disk.Name, $disk.ReadErrors) } }
+    if ($disk.Wear -ge $wearCritical) { $w += @{ Key = 'DiskWearHigh'; Args = @($disk.Name, $disk.Wear) } }
+    elseif ($disk.Wear -ge $wearWarn) { $w += @{ Key = 'DiskWearWarn'; Args = @($disk.Name, $disk.Wear) } }
+    if ($disk.Temperature -ge $tempWarn) { $w += @{ Key = 'DiskHot'; Args = @($disk.Name, $disk.Temperature) } }
+    ,$w
+}
+
+# ------------------------------------------------------------------
+# Hardware health (read-only)
+# ------------------------------------------------------------------
+function Get-ProblemDevices {
+    Get-CimInstance Win32_PnPEntity |
+        Where-Object { $_.ConfigManagerErrorCode -notin 0, 22, 45 -and $_.Present -ne $false } |
+        ForEach-Object {
+            [pscustomobject]@{
+                Name       = if ($_.Name) { $_.Name } else { $_.DeviceID }
+                Code       = [int]$_.ConfigManagerErrorCode
+                HardwareId = @($_.HardwareID)[0]
+            }
+        }
+}
+
+function Get-MemoryInfo {
+    $slots = (Get-CimInstance Win32_PhysicalMemoryArray | Measure-Object MemoryDevices -Sum).Sum
+    Get-MemorySummary (Get-CimInstance Win32_PhysicalMemory) $slots
+}
+
+function Get-DiskInfo {
+    foreach ($d in Get-PhysicalDisk) {
+        $rel = $d | Get-StorageReliabilityCounter -EA SilentlyContinue
+        [pscustomobject]@{
+            Name        = $d.FriendlyName
+            Media       = [string]$d.MediaType
+            Bus         = [string]$d.BusType
+            SizeGB      = [math]::Round($d.Size / 1e9)   # decimal GB, as printed on the box
+            Firmware    = $d.FirmwareVersion
+            Health      = [string]$d.HealthStatus
+            Wear        = $rel.Wear
+            Temperature = $rel.Temperature
+            ReadErrors  = $rel.ReadErrorsUncorrected
+        }
+    }
 }
 
 # ------------------------------------------------------------------
@@ -328,6 +469,32 @@ try {
     Write-Host ("{0,-12} {1} (build {2})" -f (M Os), $os.Caption, $os.BuildNumber)
     Write-Host ("{0,-12} {1}" -f (M Cpu), (Get-CimInstance Win32_Processor | Select-Object -First 1).Name.Trim())
     foreach ($g in $gpus) { Write-Host ("{0,-12} {1}  [{2}]" -f (M Gpu), $g.Name, $g.DriverVersion) }
+
+    # --- Hardware health (information only, never changes anything) ---
+    Say-Head (M Health)
+    try {
+        $mem = Get-MemoryInfo
+        Write-Host ("{0,-12} {1}" -f (M Ram), (M RamLine $mem.TotalGB $mem.Type $mem.Count $mem.Slots $mem.Actual))
+        if ($mem.Slow)   { Say-Warn (M RamSlow $mem.Actual $mem.Rated) }
+        if ($mem.Single) { Say-Info (M RamSingle) }
+
+        foreach ($d in @(Get-DiskInfo)) {
+            $health = switch ($d.Health) { 'Healthy' { M DiskHealthy } 'Warning' { M DiskWarning } 'Unhealthy' { M DiskUnhealthy } default { M Unknown } }
+            $wear = if ($null -ne $d.Wear -and ($d.Wear -gt 0 -or $d.Bus -eq 'NVMe')) { "%$($d.Wear)" } else { M Unknown }
+            $temp = if ($d.Temperature -gt 0) { "$($d.Temperature)°C" } else { M Unknown }
+            Write-Host ("{0,-12} {1}" -f (M Disk), (M DiskLine $d.Name $d.Bus $d.Media $d.SizeGB $d.Firmware))
+            Write-Host ("{0,-12} {1}" -f '', (M DiskStats $health $wear $temp)) -ForegroundColor DarkGray
+            $warnings = Get-DiskWarnings $d   # assign first: foreach over the call would not unroll ,@()
+            foreach ($w in $warnings) { $a = $w.Args; Say-Warn (M $w.Key @a) }
+        }
+
+        $devs = @(Get-ProblemDevices)
+        if (-not $devs) { Say-Ok (M DevNone) }
+        foreach ($dev in $devs) {
+            Say-Warn (M DevProblem $dev.Name (M (Get-DeviceProblemKey $dev.Code) $dev.Code))
+            if ($dev.HardwareId) { Write-Host "     $(M DevId $dev.HardwareId)" -ForegroundColor DarkGray }
+        }
+    } catch { Say-Warn (M HealthFailed $_.Exception.Message) }
 
     $items = @()
 

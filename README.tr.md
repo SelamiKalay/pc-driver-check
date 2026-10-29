@@ -19,6 +19,7 @@ Bilgisayarının sürücülerinin güncel olup olmadığını kontrol eden, gün
 - [Seçenekler](#seçenekler)
 - [Örnek çıktı](#örnek-çıktı)
 - [Güncellemeler nereden geliyor](#güncellemeler-nereden-geliyor)
+- [Donanım sağlığı](#donanım-sağlığı)
 - [Güvenlik](#güvenlik)
 - [Güncellemeyi geri alma](#güncellemeyi-geri-alma)
 - [Neler yapmaz](#neler-yapmaz)
@@ -31,13 +32,14 @@ Bilgisayarının sürücülerinin güncel olup olmadığını kontrol eden, gün
 ## Ne yapar
 
 1. **Bilgisayarı tanır**: model, Windows sürümü, işlemci, ekran kart(lar)ı ve kurulu sürücü sürümleri. Hiçbir şey koda sabit yazılmamıştır; aynı araç her makinede çalışır.
-2. **NVIDIA ekran kartlarını** NVIDIA'nın resmi sürücü servisinden kontrol eder. Bu genelde Windows Update'tekinden daha yenidir.
-3. **Windows Update'i tarar**: Microsoft'un tam olarak bu donanım için sunduğu tüm sürücüleri bulur.
-4. **Gereksizleri ayıklar**: bir kez takılan telefon ve USB aksesuarlarının sürücüleri (Android, iPhone, MTP, …) gizlenir.
-5. **Güncellemeleri listeler**: numara, kaynak, aygıt sınıfı, tarih ve boyutla.
-6. **Sana sorar**: hangilerinin kurulacağını sen seçersin.
-7. **Geri yükleme noktası oluşturur**, sonra seçtiklerini indirip kurar.
-8. **Özet gösterir**: yeniden başlatma gerekip gerekmediğini söyler ve bir kayıt dosyası tutar.
+2. **Donanım sağlığını kontrol eder** (sadece okur): RAM, diskler / SSD'ler ve Aygıt Yöneticisi'nde sorunlu görünen aygıtlar. Bkz. [Donanım sağlığı](#donanım-sağlığı).
+3. **NVIDIA ekran kartlarını** NVIDIA'nın resmi sürücü servisinden kontrol eder. Bu genelde Windows Update'tekinden daha yenidir.
+4. **Windows Update'i tarar**: Microsoft'un tam olarak bu donanım için sunduğu tüm sürücüleri bulur.
+5. **Gereksizleri ayıklar**: bir kez takılan telefon ve USB aksesuarlarının sürücüleri (Android, iPhone, MTP, …) gizlenir.
+6. **Güncellemeleri listeler**: numara, kaynak, aygıt sınıfı, tarih ve boyutla.
+7. **Sana sorar**: hangilerinin kurulacağını sen seçersin.
+8. **Geri yükleme noktası oluşturur**, sonra seçtiklerini indirip kurar.
+9. **Özet gösterir**: yeniden başlatma gerekip gerekmediğini söyler ve bir kayıt dosyası tutar.
 
 ## Gereksinimler
 
@@ -102,6 +104,12 @@ Model        Örnek Laptop 15
 Windows      Microsoft Windows 11 Pro (build 26100)
 İşlemci      Intel(R) Core(TM) Ultra 7 155H
 Ekran kartı  NVIDIA GeForce RTX 4070 Laptop GPU  [32.0.15.5222]
+
+==== Donanım sağlığı ====
+RAM          32 GB DDR5, 2/2 yuva dolu, 5600 MT/s
+Disk         Örnek NVMe SSD 1TB | NVMe SSD | 1000 GB | firmware 1.0
+             sağlık: iyi | aşınma: %3 | sıcaklık: 41°C
+[OK] Sorunlu aygıt yok.
 [--] NVIDIA sürücüsü kontrol ediliyor: NVIDIA GeForce RTX 4070 Laptop GPU
 [--] Windows Update taranıyor (1-2 dakika sürebilir)...
 [--] 3 telefon/USB aygıtı sürücüsü gizlendi (göstermek için -IncludeDevices).
@@ -132,6 +140,18 @@ Bilgisayarı YENİDEN BAŞLATIN.
 **AMD ve Intel ekran kartları** Windows Update üzerinden kontrol edilir. Kendi araçlarında genelde daha yeni sürümler bulunur:
 [AMD Software: Adrenalin Edition](https://www.amd.com/en/support/download/drivers.html) · [Intel Driver & Support Assistant](https://www.intel.com/content/www/us/en/support/detect.html).
 
+## Donanım sağlığı
+
+`-ScanOnly` dahil her çalıştırmada gösterilir. Sadece bilgi okur, hiçbir şeyi değiştirmez.
+
+| Bölüm | Gösterilen | Uyarı verildiği durum |
+|---|---|---|
+| **RAM** | Toplam boyut, tür (DDR4/DDR5/…), dolu / toplam yuva, çalışma hızı | Desteklediği hızın altında çalışıyorsa (XMP/EXPO kapalı olabilir ya da işlemci o hızı desteklemiyordur) veya iki yuvalı sistemde tek modül varsa (tek kanal) |
+| **Diskler / SSD'ler** | Model, bağlantı (NVMe/SATA/USB), boyut, firmware sürümü, sağlık, aşınma, sıcaklık | Windows diski sağlıksız bildiriyorsa · düzeltilemeyen okuma hatası varsa · aşınma ≥ %70 (takip et) ya da ≥ %90 (değiştirmeyi planla) · sıcaklık ≥ 70°C |
+| **Aygıtlar** | Aygıt Yöneticisi'nde hata gösteren aygıtlar, ör. *sürücü yüklü değil* (kod 28), ve sürücü aramak için donanım kimliği | Varsa her zaman listelenir. Devre dışı bırakılmış (kod 22) ve takılı olmayan (kod 45) aygıtlar gösterilmez |
+
+*Aşınma*, SSD'nin kendi "kullanılan ömür yüzdesi" sayacıdır: %100, üreticinin belirttiği yazma ömrüne ulaşıldığı anlamına gelir (disk genelde çalışmaya devam eder ama yedek almanın zamanıdır). Birçok SATA ve USB disk aşınma ya da sıcaklık bildirmez; bunlar sorun olarak değil *bilinmiyor* olarak gösterilir.
+
 ## Güvenlik
 
 - **Seçmediğin hiçbir şey kurulmaz.** `-ScanOnly` hiçbir şey kurmaz.
@@ -152,7 +172,8 @@ Tek bir aygıt için: **Aygıt Yöneticisi → aygıt → Özellikler → Sürü
 
 ## Neler yapmaz
 
-- BIOS / UEFI ya da firmware güncellemesi
+- BIOS / UEFI ya da firmware güncellemesi (SSD firmware sürümü gösterilir; üreticinin sitesinde karşılaştırabilirsin)
+- Donanım onarımı: RAM, disk ve aygıt uyarıları sadece bilgi amaçlıdır
 - Üretici yazılımları (laptop kontrol merkezleri, RGB yazılımları vb.)
 - Windows özellik ya da güvenlik güncellemeleri (onlar için Windows Update'i kullan)
 - Arka planda ya da zamanlanmış çalışma: sadece sen başlattığında çalışır

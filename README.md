@@ -19,6 +19,7 @@ A small Windows tool that checks whether your PC's drivers are up to date, shows
 - [Options](#options)
 - [Example output](#example-output)
 - [Where updates come from](#where-updates-come-from)
+- [Hardware health](#hardware-health)
 - [Safety](#safety)
 - [Undoing an update](#undoing-an-update)
 - [What it does not do](#what-it-does-not-do)
@@ -31,13 +32,14 @@ A small Windows tool that checks whether your PC's drivers are up to date, shows
 ## What it does
 
 1. **Detects this PC**: model, Windows version, CPU, and GPU(s) with their current driver versions. Nothing is hard-coded, so the same tool works on every machine.
-2. **Checks NVIDIA GPUs** against NVIDIA's official driver service. This is usually newer than what Windows Update offers.
-3. **Scans Windows Update** for every driver Microsoft offers for this exact hardware.
-4. **Filters out noise**: drivers for phones and USB accessories you plugged in once (Android, iPhone, MTP, …) are hidden.
-5. **Lists the updates** with a number, source, device class, date and size.
-6. **Asks you** which ones to install.
-7. **Creates a restore point**, then downloads and installs your selection.
-8. **Shows a summary**, tells you if a restart is needed, and saves a log file.
+2. **Checks hardware health** (read-only): RAM, disks / SSDs and devices with a problem in Device Manager. See [Hardware health](#hardware-health).
+3. **Checks NVIDIA GPUs** against NVIDIA's official driver service. This is usually newer than what Windows Update offers.
+4. **Scans Windows Update** for every driver Microsoft offers for this exact hardware.
+5. **Filters out noise**: drivers for phones and USB accessories you plugged in once (Android, iPhone, MTP, …) are hidden.
+6. **Lists the updates** with a number, source, device class, date and size.
+7. **Asks you** which ones to install.
+8. **Creates a restore point**, then downloads and installs your selection.
+9. **Shows a summary**, tells you if a restart is needed, and saves a log file.
 
 ## Requirements
 
@@ -102,6 +104,12 @@ Model        Example Laptop 15
 Windows      Microsoft Windows 11 Pro (build 26100)
 CPU          Intel(R) Core(TM) Ultra 7 155H
 GPU          NVIDIA GeForce RTX 4070 Laptop GPU  [32.0.15.5222]
+
+==== Hardware health ====
+RAM          32 GB DDR5, 2/2 slots used, 5600 MT/s
+Disk         Example NVMe SSD 1TB | NVMe SSD | 1000 GB | firmware 1.0
+             health: good | wear: %3 | temperature: 41°C
+[OK] No problem devices.
 [--] Checking NVIDIA driver: NVIDIA GeForce RTX 4070 Laptop GPU
 [--] Scanning Windows Update (this can take 1-2 minutes)...
 [--] 3 phone/USB accessory driver(s) hidden (use -IncludeDevices to show).
@@ -132,6 +140,18 @@ RESTART your PC.
 **AMD and Intel GPUs** are checked through Windows Update. Their own tools usually have newer releases:
 [AMD Software: Adrenalin Edition](https://www.amd.com/en/support/download/drivers.html) · [Intel Driver & Support Assistant](https://www.intel.com/content/www/us/en/support/detect.html).
 
+## Hardware health
+
+Shown on every run, including `-ScanOnly`. It only reads information; nothing is changed.
+
+| Part | What is shown | Warning when |
+|---|---|---|
+| **RAM** | Total size, type (DDR4/DDR5/…), used / total slots, current speed | It runs below its rated speed (XMP/EXPO may be off, or the CPU does not support that speed), or a single module sits in a two-slot system (single channel) |
+| **Disks / SSDs** | Model, bus (NVMe/SATA/USB), size, firmware version, health, wear, temperature | Windows reports the disk as not healthy · any uncorrectable read error · wear ≥ 70% (keep an eye on it) or ≥ 90% (plan a replacement) · temperature ≥ 70°C |
+| **Devices** | Devices with an error in Device Manager, e.g. *no driver installed* (code 28), plus the hardware ID to search for a driver | Always listed when present. Disabled (code 22) and unplugged (code 45) devices are not shown |
+
+*Wear* is the SSD's own "percentage used" counter: 100% means the manufacturer's rated write endurance is reached (the drive usually keeps working, but it is time to keep backups). Many SATA and USB disks do not report wear or temperature; they are shown as *unknown*, not as a problem.
+
 ## Safety
 
 - **Nothing is installed without your selection.** `-ScanOnly` installs nothing at all.
@@ -152,7 +172,8 @@ For a single device you can also use **Device Manager → device → Properties 
 
 ## What it does not do
 
-- BIOS / UEFI or firmware updates
+- BIOS / UEFI or firmware updates (the SSD firmware version is shown, so you can compare it on the manufacturer's site)
+- Fixing hardware: RAM, disk and device warnings are information only
 - Manufacturer utilities (laptop control centers, RGB software, etc.)
 - Windows feature or security updates (use Windows Update for those)
 - Running in the background or on a schedule — it only runs when you start it

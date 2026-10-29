@@ -111,6 +111,41 @@ Check 'unknown model -> NoMatch' (Find-NvidiaDriver $other 57).Status 'NoMatch'
 $noVer = [pscustomobject]@{ Name = 'NVIDIA GeForce RTX 4070'; DriverVersion = $null }
 Check 'unreadable version -> NoVersion' (Find-NvidiaDriver $noVer 57).Status 'NoVersion'
 
+Write-Host '--- Get-DeviceProblemKey'
+Check 'code 28 (no driver)' (Get-DeviceProblemKey 28) 'DevCode28'
+Check 'code 43' (Get-DeviceProblemKey 43) 'DevCode43'
+Check 'code 12 -> generic' (Get-DeviceProblemKey 12) 'DevCodeOther'
+Check 'every key exists in $Msg' (@(1, 10, 18, 28, 31, 43, 52, 12 | Where-Object { -not $Msg.en.ContainsKey((Get-DeviceProblemKey $_)) }).Count) 0
+
+Write-Host '--- Get-MemorySummary'
+$dimm = { param($gb, $speed, $cfg) [pscustomobject]@{ Capacity = [int64]$gb * 1GB; Speed = $speed; ConfiguredClockSpeed = $cfg; SMBIOSMemoryType = 34 } }
+$m = Get-MemorySummary @((& $dimm 16 5600 5600), (& $dimm 16 5600 5600)) 2
+Check '2x16 GB DDR5 full speed' "$($m.TotalGB) $($m.Type) $($m.Count)/$($m.Slots) slow=$($m.Slow) single=$($m.Single)" '32 DDR5 2/2 slow=False single=False'
+$m = Get-MemorySummary @((& $dimm 16 6000 4800), (& $dimm 16 6000 4800)) 2
+Check 'rated 6000, running 4800 -> Slow' "$($m.Slow) $($m.Actual)/$($m.Rated)" 'True 4800/6000'
+$m = Get-MemorySummary @(& $dimm 8 3200 3200) 2
+Check 'one module, two slots -> Single' $m.Single $true
+$m = Get-MemorySummary @(& $dimm 8 3200 0) 1
+Check 'speed not reported -> not Slow' $m.Slow $false
+Check 'slots reported lower than modules' (Get-MemorySummary @((& $dimm 8 3200 3200), (& $dimm 8 3200 3200)) 0).Slots 2
+
+Write-Host '--- Get-DiskWarnings'
+$disk = { param($health, $wear, $temp, $err) [pscustomobject]@{ Name = 'SSD'; Health = $health; Wear = $wear; Temperature = $temp; ReadErrors = $err } }
+Check 'healthy, new, cool -> none' (Get-DiskWarnings (& $disk 'Healthy' 3 38 0)).Count 0
+Check 'no counters (SATA/USB) -> none' (Get-DiskWarnings (& $disk 'Healthy' $null $null $null)).Count 0
+Check 'wear 69 -> none' (Get-DiskWarnings (& $disk 'Healthy' 69 40 0)).Count 0
+Check 'wear 70 -> WearWarn' ((Get-DiskWarnings (& $disk 'Healthy' 70 40 0)) | ForEach-Object Key) 'DiskWearWarn'
+Check 'wear 90 -> WearHigh only' ((Get-DiskWarnings (& $disk 'Healthy' 90 40 0)) | ForEach-Object Key) 'DiskWearHigh'
+Check 'wear 120 (past rated life)' ((Get-DiskWarnings (& $disk 'Healthy' 120 40 0)) | ForEach-Object Key) 'DiskWearHigh'
+Check 'temp 69 -> none' (Get-DiskWarnings (& $disk 'Healthy' 5 69 0)).Count 0
+Check 'temp 70 -> Hot' ((Get-DiskWarnings (& $disk 'Healthy' 5 70 0)) | ForEach-Object Key) 'DiskHot'
+Check 'unhealthy + errors, serious first' ((Get-DiskWarnings (& $disk 'Unhealthy' 95 75 3)) | ForEach-Object Key) @('DiskBad', 'DiskErrors', 'DiskWearHigh', 'DiskHot')
+# Ana akistaki gibi: once degiskene ata, sonra foreach + mesaj
+$warnings = Get-DiskWarnings (& $disk 'Healthy' 92 40 0)
+$script:Lang = 'en'   # M() bunu okur
+$text = foreach ($w in $warnings) { $a = $w.Args; M $w.Key @a }
+Check 'warning renders as text' $text "SSD: 92% of the SSD's rated life is used. Back up and plan a replacement."
+
 Write-Host '--- Messages'
 $missing = @($Msg.tr.Keys | Where-Object { -not $Msg.en.ContainsKey($_) }) + @($Msg.en.Keys | Where-Object { -not $Msg.tr.ContainsKey($_) })
 Check 'tr/en have the same keys' ($missing -join ' ') ''
