@@ -168,6 +168,20 @@ Check 'inbox driver is skipped' (Get-BackupInfNames @([pscustomobject]@{ Hardwar
 Check 'device not present -> nothing' (Get-BackupInfNames @([pscustomobject]@{ HardwareId = 'USB\VID_FFFF' }) $entities $signed).Count 0
 Check 'two items, unique + sorted' (Get-BackupInfNames @([pscustomobject]@{ HardwareId = 'PCI\VEN_8086&DEV_7E28&REV_04' }, [pscustomobject]@{ DeviceId = 'PCI\VEN_10DE&DEV_2820\4&1' }, [pscustomobject]@{ DeviceId = 'PCI\VEN_10DE&DEV_2820\4&1' }) $entities $signed) @('oem12.inf', 'oem91.inf')
 
+Write-Host '--- Test-TrustedAcl'
+$ace = { param($sid, $rights, $type) [pscustomobject]@{ IdentityReference = $sid; FileSystemRights = $rights; AccessControlType = $type } }
+$locked = @((& $ace 'S-1-5-18' 'FullControl' 'Allow'), (& $ace 'S-1-5-32-544' 'FullControl' 'Allow'))
+Check 'SYSTEM + Administrators only' (Test-TrustedAcl 'S-1-5-32-544' $locked) $true
+Check 'owned by a user' (Test-TrustedAcl 'S-1-5-21-1-2-3-1001' $locked) $false
+Check 'Users can create folders' (Test-TrustedAcl 'S-1-5-32-544' ($locked + (& $ace 'S-1-5-32-545' 'Write' 'Allow'))) $false
+Check 'CREATOR OWNER GENERIC_ALL' (Test-TrustedAcl 'S-1-5-18' ($locked + (& $ace 'S-1-3-0' 268435456 'Allow'))) $false
+Check 'Users read-only is fine' (Test-TrustedAcl 'S-1-5-32-544' ($locked + (& $ace 'S-1-5-32-545' 'ReadAndExecute, Synchronize' 'Allow'))) $true
+Check 'Deny for Everyone is fine' (Test-TrustedAcl 'S-1-5-32-544' ($locked + (& $ace 'S-1-1-0' 'Write' 'Deny'))) $true
+# Gercek ornek: %ProgramData%'nin kendisi Users'a klasor olusturma izni verir, guvenilmez sayilmali
+$pd = Get-Acl -LiteralPath $env:ProgramData
+$sidType = [Security.Principal.SecurityIdentifier]
+Check 'real %ProgramData% ACL is not trusted' (Test-TrustedAcl $pd.GetOwner($sidType).Value $pd.GetAccessRules($true, $true, $sidType)) $false
+
 Write-Host '--- Messages'
 $missing = @($Msg.tr.Keys | Where-Object { -not $Msg.en.ContainsKey($_) }) + @($Msg.en.Keys | Where-Object { -not $Msg.tr.ContainsKey($_) })
 Check 'tr/en have the same keys' ($missing -join ' ') ''

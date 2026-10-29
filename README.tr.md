@@ -161,7 +161,7 @@ Bilgisayarı YENİDEN BAŞLATIN.
 - **Eski sürüme düşürme yok.** NVIDIA güncellemesi sadece kurulu sürücüden daha yeniyse önerilir.
 - **Ayarlar korunur.** NVIDIA sürücüsü temiz kurulum olarak değil, yükseltme olarak kurulur; NVIDIA Denetim Masası ayarların kalır.
 - **Başarı varsayılmaz, kontrol edilir.** NVIDIA kurulumundan sonra kurulum programının çıkış koduna güvenilmez; kurulu sürüm yeniden okunur.
-- **Mevcut sürücüler yedeklenir.** Kurulumdan önce, seçilen aygıtların şu an kullandığı sürücü paketleri `pnputil` ile `%ProgramData%\PC-Driver-Check\backups\<tarih>` klasörüne aktarılır. Sadece üçüncü parti paketler (`oem*.inf`) yedeklenir; Windows'un kendi sürücüleri zaten sistemde durur. En yeni iki yedek tutulur (tek bir NVIDIA paketi yaklaşık 3 GB) ve 10 GB'tan az boş alan varsa yedek atlanır. `-NoBackup` ile kapatılabilir.
+- **Mevcut sürücüler yedeklenir.** Kurulumdan önce, seçilen aygıtların şu an kullandığı sürücü paketleri `pnputil` ile `%ProgramData%\PC-Driver-Check\backups\<tarih>` klasörüne aktarılır. Sadece üçüncü parti paketler (`oem*.inf`) yedeklenir; Windows'un kendi sürücüleri zaten sistemde durur. En yeni iki yedek tutulur (tek bir NVIDIA paketi yaklaşık 3 GB) ve 10 GB'tan az boş alan varsa yedek atlanır. `-NoBackup` ile kapatılabilir. Araç `%ProgramData%\PC-Driver-Check` klasörünü sadece SYSTEM ve Administrators erişebilecek şekilde oluşturur; klasör zaten varsa ve sahibi ya da yazma izni olan başka biri varsa (örneğin başka bir kullanıcı oluşturmuşsa) oraya yazmak yerine yedek atlanır.
 - **Her şey kaydedilir:** script'in yanındaki `logs\PC-Driver-Check_<tarih>.log` dosyasına.
 
 ## Güncellemeyi geri alma

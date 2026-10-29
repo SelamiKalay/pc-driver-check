@@ -161,7 +161,7 @@ Shown on every run, including `-ScanOnly`. It only reads information; nothing is
 - **No downgrades.** NVIDIA updates are offered only if they are newer than the installed driver.
 - **Settings are kept.** The NVIDIA driver is installed as an upgrade, not a clean install, so your NVIDIA Control Panel settings stay.
 - **Success is checked, not assumed.** After an NVIDIA install the tool reads the installed version again instead of trusting the installer's exit code.
-- **Current drivers are backed up.** Before installing, the driver packages the selected devices use now are exported with `pnputil` to `%ProgramData%\PC-Driver-Check\backups\<date>`. Only third-party packages (`oem*.inf`) are exported; Windows' own drivers are always on the system anyway. The two newest backups are kept (an NVIDIA package alone is about 3 GB), and the backup is skipped if less than 10 GB is free. Turn it off with `-NoBackup`.
+- **Current drivers are backed up.** Before installing, the driver packages the selected devices use now are exported with `pnputil` to `%ProgramData%\PC-Driver-Check\backups\<date>`. Only third-party packages (`oem*.inf`) are exported; Windows' own drivers are always on the system anyway. The two newest backups are kept (an NVIDIA package alone is about 3 GB), and the backup is skipped if less than 10 GB is free. Turn it off with `-NoBackup`. The tool creates `%ProgramData%\PC-Driver-Check` so that only SYSTEM and Administrators can access it; if the folder already exists with other owners or write permissions (for example made by another user), the backup is skipped instead of writing there.
 - **Everything is logged** to `logs\PC-Driver-Check_<date>.log` next to the script.
 
 ## Undoing an update

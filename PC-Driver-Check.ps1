@@ -321,6 +321,22 @@ function Get-BackupInfNames($chosen, $entities, $signed) {
         Where-Object { $_ -cmatch '^oem\d+\.inf$' } | Sort-Object -Unique)
 }
 
+# Backup folder may only be owned / writable by SYSTEM and Administrators. Standard users can
+# create folders under %ProgramData%, and the backup is written and cleaned up with admin
+# rights, so a folder or junction planted there could redirect that delete.
+# $rules: FileSystemAccessRule list with SecurityIdentifier identities.
+function Test-TrustedAcl([string]$ownerSid, $rules) {
+    $trusted = 'S-1-5-18', 'S-1-5-32-544'   # SYSTEM, Administrators
+    # WriteData, AppendData, WriteEA, DeleteChild, WriteAttributes, Delete, WRITE_DAC, WRITE_OWNER, GENERIC_ALL, GENERIC_WRITE
+    $writeMask = 0x2 -bor 0x4 -bor 0x10 -bor 0x40 -bor 0x100 -bor 0x10000 -bor 0x40000 -bor 0x80000 -bor 0x10000000 -bor 0x40000000
+    if ($ownerSid -notin $trusted) { return $false }
+    -not @($rules | Where-Object {
+        # GENERIC_ALL (CREATOR OWNER) is not a named FileSystemRights value: never cast numbers to the enum
+        $mask = if ($_.FileSystemRights -is [string]) { [int64][Security.AccessControl.FileSystemRights]$_.FileSystemRights } else { [int64]$_.FileSystemRights }
+        [string]$_.AccessControlType -eq 'Allow' -and ($mask -band $writeMask) -and [string]$_.IdentityReference -notin $trusted
+    }).Count
+}
+
 # ------------------------------------------------------------------
 # Hardware health (read-only)
 # ------------------------------------------------------------------
@@ -434,10 +450,38 @@ function New-RestorePoint {
     }
 }
 
+# Creates %ProgramData%\PC-Driver-Check locked to SYSTEM + Administrators, or checks that an
+# existing one still is. Throws (backup is skipped) instead of using a folder it cannot trust.
+function Initialize-BackupRoot([string]$root) {
+    $admins = [Security.Principal.SecurityIdentifier]'S-1-5-32-544'
+    if (-not (Test-Path -LiteralPath $root)) {
+        New-Item -ItemType Directory $root | Out-Null
+        $acl = New-Object Security.AccessControl.DirectorySecurity
+        $acl.SetOwner($admins)
+        $acl.SetAccessRuleProtection($true, $false)   # no inherited "Users: create folders"
+        foreach ($sid in 'S-1-5-18', 'S-1-5-32-544') {
+            $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
+                [Security.Principal.SecurityIdentifier]$sid, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
+        }
+        Set-Acl -LiteralPath $root $acl
+        # Anything that appeared before Set-Acl was not created by us
+        if (Get-ChildItem -LiteralPath $root -Force) { throw "unexpected content in new folder $root" }
+    }
+    $item = Get-Item -LiteralPath $root -Force
+    $acl = Get-Acl -LiteralPath $root
+    $owner = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+        -not (Test-TrustedAcl $owner $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))) {
+        throw "$root is not protected (owner $owner); delete it or restrict it to Administrators"
+    }
+}
+
 # Exports the given oem*.inf packages with pnputil. Not next to the script: that folder may be
 # synced (OneDrive Desktop) and an NVIDIA package alone is ~3 GB.
 function New-DriverBackup([string[]]$infNames) {
-    $base = Join-Path $env:ProgramData 'PC-Driver-Check\backups'
+    $root = Join-Path $env:ProgramData 'PC-Driver-Check'
+    Initialize-BackupRoot $root
+    $base = Join-Path $root 'backups'
     $drive = Get-PSDrive ($base.Substring(0, 1))
     $freeGB = [math]::Round($drive.Free / 1GB, 1)
     if ($freeGB -lt 10) { Say-Warn (M BackupNoSpace "$($drive.Name):" $freeGB); return }
@@ -453,9 +497,12 @@ function New-DriverBackup([string[]]$infNames) {
     Say-Ok (M BackupOk $dir $(if ($size -ge 1GB) { '{0:N1} GB' -f ($size / 1GB) } else { '{0:N0} MB' -f ($size / 1MB) }))
     Say-Info (M BackupHow $dir)
 
-    # Keep the two newest backups; each can be several GB
-    Get-ChildItem $base -Directory | Sort-Object Name -Descending | Select-Object -Skip 2 |
-        Remove-Item -Recurse -Force -EA SilentlyContinue
+    # Keep the two newest backups; each can be several GB. Only our own yyyyMMdd_HHmmss
+    # folders, never a junction / symlink (Remove-Item -Recurse could follow it).
+    Get-ChildItem -LiteralPath $base -Directory -Force |
+        Where-Object { $_.Name -match '^\d{8}_\d{6}$' -and -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } |
+        Sort-Object Name -Descending | Select-Object -Skip 2 |
+        ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -EA SilentlyContinue }
 }
 
 function Install-WUDriver($item) {
