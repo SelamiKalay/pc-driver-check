@@ -52,7 +52,7 @@ Bilgisayarının sürücülerinin güncel olup olmadığını kontrol eden, gün
 
 ## Kullanım
 
-1. Depoyu indir: **Code → Download ZIP**, sonra ZIP'i aç.
+1. [**Releases**](https://github.com/SelamiKalay/pc-driver-check/releases/latest) sayfasından en son ZIP'i indir ve aç. (Her sürümde bir `.sha256` dosyası da var; `Get-FileHash <zip>` aynı değeri vermeli.)
    > Windows dosyaları engellerse: ZIP'e sağ tıkla → **Özellikler** → **Engellemeyi kaldır** kutusunu işaretle → Tamam, sonra tekrar aç.
 2. **`Check-Drivers.bat`** dosyasına çift tıkla.
 3. Yönetici izni penceresinde **Evet**'e tıkla.
@@ -77,7 +77,9 @@ Check-Drivers.bat -ScanOnly          :: sadece listele, hiçbir şey kurma
 Check-Drivers.bat -IncludeDevices    :: telefon / USB aksesuar sürücülerini de göster
 Check-Drivers.bat -NoBackup          :: kurulumdan önce sürücü yedeği alma
 Check-Drivers.bat -NvidiaStudio      :: Game Ready yerine NVIDIA Studio sürücüleri
-Check-Drivers.bat -ScanOnly -Report html   :: kayıt dosyasının yanına HTML rapor da kaydet```
+Check-Drivers.bat -NoUpdateCheck     :: aracın yeni sürümü için GitHub'a bakma
+Check-Drivers.bat -ScanOnly -Report html   :: kayıt dosyasının yanına HTML rapor da kaydet
+```
 
 Ya da script'i doğrudan çalıştır:
 
@@ -233,7 +235,7 @@ Bu, internetten indirilen bir script'e SmartScreen'in tepkisi. **Ek bilgi → Yi
 Bazı OEM ya da çok yeni modellerin NVIDIA listesindeki adı farklı olabiliyor. [nvidia.com/drivers](https://www.nvidia.com/drivers) adresinden elle kontrol et. Windows Update yine taranır.
 
 **Bir yere veri gönderiliyor mu?**
-Sadece Windows Update'in standart istekleri, NVIDIA kartlarda ekran kartı modelinle nvidia.com'a yapılan bir sorgu ve AMD kartlarda amd.com'daki sabit bir sürücü sayfasına yapılan bir istek (bilgisayarınla ilgili hiçbir veri gönderilmez). Başka hiçbir şey toplanmaz ya da gönderilmez.
+Sadece Windows Update'in standart istekleri, NVIDIA kartlarda ekran kartı modelinle nvidia.com'a yapılan bir sorgu AMD kartlarda amd.com'daki sabit bir sürücü sayfasına yapılan bir istek ve bu aracın en son sürümü için GitHub'a yapılan bir istek (`-NoUpdateCheck` ile kapatılır; sadece haber verir, hiçbir şey indirmez). Son ikisinde bilgisayarınla ilgili hiçbir veri gönderilmez. Başka hiçbir şey toplanmaz ya da gönderilmez.
 
 ## Testler
 
@@ -248,6 +250,10 @@ powershell -ExecutionPolicy Bypass -File .\tests\PC-Driver-Check.Tests.ps1
 Her push ve pull request'te GitHub Actions ile Windows PowerShell 5.1 ve PowerShell 7 üzerinde
 çalışır, ardından [PSScriptAnalyzer](https://github.com/PowerShell/PSScriptAnalyzer) kontrolü
 yapılır (kurallar `PSScriptAnalyzerSettings.psd1` içinde).
+
+## Sürüm notları
+
+Bkz. [CHANGELOG.md](CHANGELOG.md). Sürümler bir `vX.Y.Z` etiketinden GitHub Actions ile oluşturulur: testler tekrar çalışır, etiket script'teki `$Version` ile aynı olmalıdır, ZIP ve SHA256 değeri sürüme eklenir.
 
 ## Lisans
 

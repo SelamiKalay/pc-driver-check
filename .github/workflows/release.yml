@@ -1,0 +1,59 @@
+name: release
+
+# vX.Y.Z etiketi push edilince: testler, etiket = $Version kontrolu, ZIP + SHA256, GitHub Release
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.ref_name }}   # script'e ${{ }} ile degil, ortam degiskeniyle gecer
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Birim testleri (Windows PowerShell 5.1)
+        shell: powershell
+        run: ./tests/PC-Driver-Check.Tests.ps1
+
+      - name: Birim testleri (PowerShell 7)
+        shell: pwsh
+        run: ./tests/PC-Driver-Check.Tests.ps1
+
+      - name: Etiket, $Version ve CHANGELOG uyumu
+        shell: pwsh
+        run: |
+          $m = Select-String -Path PC-Driver-Check.ps1 -Pattern "^\`$Version = '(\d+\.\d+\.\d+)'" | Select-Object -First 1
+          if (-not $m) { throw '$Version bulunamadi' }
+          $ver = $m.Matches[0].Groups[1].Value
+          if ("v$ver" -ne $env:TAG) { throw "Etiket $env:TAG, script'teki surum $ver" }
+          $section = (Get-Content CHANGELOG.md -Raw -Encoding UTF8) -split '(?m)^## ' |
+              Where-Object { $_ -match "^\[$([regex]::Escape($ver))\]" } | Select-Object -First 1
+          if (-not $section) { throw "CHANGELOG.md'de $ver bolumu yok" }
+          New-Item -ItemType Directory dist | Out-Null
+          ('## ' + $section.Trim()) | Set-Content dist/notes.md -Encoding utf8
+
+      - name: ZIP ve SHA256
+        shell: pwsh
+        run: |
+          $name = "PC-Driver-Check-$env:TAG"
+          New-Item -ItemType Directory "dist/$name" | Out-Null
+          Copy-Item PC-Driver-Check.ps1, Check-Drivers.bat, PC-Driver-Check.config.example.json,
+                    README.md, README.tr.md, CHANGELOG.md, LICENSE "dist/$name/"
+          Compress-Archive "dist/$name" "dist/$name.zip"
+          $hash = (Get-FileHash "dist/$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name.zip" | Set-Content "dist/$name.zip.sha256" -Encoding ascii -NoNewline
+          Get-ChildItem dist -File | Format-Table Name, Length | Out-String
+
+      - name: GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $name = "PC-Driver-Check-$env:TAG"
+          gh release create $env:TAG "dist/$name.zip" "dist/$name.zip.sha256" --title "PC-Driver-Check $env:TAG" --notes-file dist/notes.md
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }

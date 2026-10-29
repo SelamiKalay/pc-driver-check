@@ -37,6 +37,9 @@
 .PARAMETER Report
     Also save a json or html report next to the log file.
 
+.PARAMETER NoUpdateCheck
+    Do not check GitHub for a newer version of this tool.
+
 .NOTES
     Exit codes: 0 = done / nothing to do, 1 = error or incomplete scan,
                 2 = some installs failed, 3010 = installed, restart required.
@@ -59,9 +62,12 @@ param(
     [switch]$All,
     [switch]$Yes,
     [ValidateSet('json', 'html')]
-    [string]$Report
+    [string]$Report,
+    [switch]$NoUpdateCheck
 )
 
+# Must match the release tag (vX.Y.Z); the release workflow checks it
+$Version = '1.0.0'
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8   # Turkish characters in console and log
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -146,6 +152,7 @@ $Msg = @{
         ReportWarnings = 'Uyarılar'
         ReportIgnored  = 'Yoksayılanlar'
         ReportNone     = 'yok'
+        NewVersion     = 'PC-Driver-Check''in yeni sürümü var: {0} (kullandığın: {1}). İndirmek için: {2}'
         BackupCreating = 'Güncellenecek aygıtların mevcut sürücüleri yedekleniyor...'
         BackupOk       = 'Sürücü yedeği ({1}): {0}'
         BackupHow      = 'Geri yüklemek için: pnputil /add-driver "{0}\*.inf" /subdirs /install'
@@ -244,6 +251,7 @@ $Msg = @{
         ReportWarnings = 'Warnings'
         ReportIgnored  = 'Ignored'
         ReportNone     = 'none'
+        NewVersion     = 'A newer PC-Driver-Check is available: {0} (you have {1}). Download: {2}'
         BackupCreating = 'Backing up the current drivers of the devices being updated...'
         BackupOk       = 'Driver backup ({1}): {0}'
         BackupHow      = 'To restore: pnputil /add-driver "{0}\*.inf" /subdirs /install'
@@ -327,6 +335,21 @@ function Read-Selection([string]$text, [int]$count) {
     ,@($picked | Sort-Object -Unique)
 }
 
+# Release tag ("v1.2.0") is newer than this version. Unparsable tags are never "newer".
+function Test-NewerRelease([string]$tag, [string]$current) {
+    $t = $null; $c = $null
+    [version]::TryParse(($tag -replace '^v', ''), [ref]$t) -and [version]::TryParse($current, [ref]$c) -and $t -gt $c
+}
+
+# Latest GitHub release of this tool, or $null (offline, no release yet, rate limit...).
+# Only informs; never downloads anything.
+function Find-LatestRelease {
+    try {
+        $r = Invoke-RestMethod 'https://api.github.com/repos/SelamiKalay/pc-driver-check/releases/latest' -UseBasicParsing -TimeoutSec 5
+        [pscustomobject]@{ Tag = [string]$r.tag_name; Url = [string]$r.html_url }
+    } catch { $null }
+}
+
 # Options that cannot be combined -> "-A, -B", or $null
 function Get-ArgConflict([bool]$scanOnly, [string]$install, [bool]$all) {
     $set = @()
@@ -377,7 +400,7 @@ th { background: #f3f3f3; } .none { color: #777; } li { margin: 2px 0; }
 @media (prefers-color-scheme: dark) { body { background: #1e1e1e; color: #ddd; } th { background: #2b2b2b; } th, td, h2 { border-color: #444; } }
 </style></head><body>
 <h1>$(& $e (M Title))</h1>
-<p>$(& $e $r.Date) &middot; exit code $(& $e $r.ExitCode)</p>
+<p>v$(& $e $r.Version) &middot; $(& $e $r.Date) &middot; exit code $(& $e $r.ExitCode)</p>
 <h2>$(& $e (M PcInfo))</h2>
 $(& $table @($r.Pc) @('Model', 'Windows', 'Cpu'))
 $(& $table $r.Pc.Gpus @('Name', 'DriverVersion'))
@@ -760,9 +783,17 @@ $unattended = $All -or $Install
 $okList = @(); $failList = @(); $reboot = $false; $ignored = @()
 
 try {
-    Write-Host (M Title) -ForegroundColor White
+    Write-Host "$(M Title)  v$Version" -ForegroundColor White
     $conflict = Get-ArgConflict $ScanOnly $Install $All
     if ($conflict) { Say-Warn (M ArgConflict $conflict); $exitCode = 1; return }
+
+    if (-not $NoUpdateCheck) {
+        $rel = Find-LatestRelease
+        # Only https links on github.com are printed; anything else from the API is ignored
+        if ($rel -and (Test-NewerRelease $rel.Tag $Version) -and $rel.Url -match '^https://github\.com/') {
+            Say-Info (M NewVersion $rel.Tag $Version $rel.Url)
+        }
+    }
 
     $cfgPath = Join-Path $Root 'PC-Driver-Check.config.json'
     try { $config = Read-Config $cfgPath }
@@ -945,6 +976,7 @@ finally {
     if ($Report) {
         try {
             $data = [ordered]@{
+                Version        = $Version
                 Date           = Get-Date -Format 's'
                 ExitCode       = $exitCode
                 Pc             = [ordered]@{

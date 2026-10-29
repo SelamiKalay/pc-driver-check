@@ -85,7 +85,11 @@ function Invoke-WebRequest {
 function Invoke-RestMethod {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', '', Justification = 'test mock')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'same signature as the cmdlet')]
-    param($Uri, [switch]$UseBasicParsing)
+    param($Uri, [switch]$UseBasicParsing, $TimeoutSec)
+    if ($Uri -match 'api\.github\.com') {
+        if ($script:fakeRelease -eq 'offline') { throw 'Unable to connect to the remote server' }
+        return $script:fakeRelease
+    }
     $script:lastUrl = $Uri
     $script:fakeDriver
 }
@@ -279,6 +283,26 @@ Check 'GPU name encoded' ($html.Contains('GPU &lt;b&gt;')) $true
 Check 'warnings listed' ($html.Contains('<li>disk is hot</li>')) $true
 Check 'empty sections say "none"' ($html.Contains('<p class="none">none</p>')) $true
 Check 'utf-8 + lang' ($html -match '<meta charset="utf-8">' -and $html -match '<html lang="en">') $true
+
+Write-Host '--- Test-NewerRelease'
+Check 'v1.1.0 > 1.0.0' (Test-NewerRelease 'v1.1.0' '1.0.0') $true
+Check 'v1.10.0 > 1.9.0 (not string order)' (Test-NewerRelease 'v1.10.0' '1.9.0') $true
+Check 'same version' (Test-NewerRelease 'v1.0.0' '1.0.0') $false
+Check 'older release' (Test-NewerRelease 'v0.9.0' '1.0.0') $false
+Check 'tag without v' (Test-NewerRelease '2.0.0' '1.0.0') $true
+Check 'garbage tag' (Test-NewerRelease 'latest' '1.0.0') $false
+Check 'empty tag' (Test-NewerRelease '' '1.0.0') $false
+
+Write-Host '--- Find-LatestRelease (mocked GitHub)'
+$script:fakeRelease = [pscustomobject]@{ tag_name = 'v1.2.0'; html_url = 'https://github.com/SelamiKalay/pc-driver-check/releases/tag/v1.2.0' }
+$rel = Find-LatestRelease
+Check 'tag + url' "$($rel.Tag) $($rel.Url)" 'v1.2.0 https://github.com/SelamiKalay/pc-driver-check/releases/tag/v1.2.0'
+$script:fakeRelease = 'offline'
+Check 'offline / 404 -> $null, no error' ($null -eq (Find-LatestRelease)) $true
+
+Write-Host '--- $Version'
+$verAst = $ast.Find({ $args[0] -is [System.Management.Automation.Language.AssignmentStatementAst] -and $args[0].Left.Extent.Text -eq '$Version' }, $false)
+Check '$Version is X.Y.Z' ($verAst.Right.Extent.Text -match "^'\d+\.\d+\.\d+'$") $true
 
 Write-Host '--- Messages'
 $missing = @($Msg.tr.Keys | Where-Object { -not $Msg.en.ContainsKey($_) }) + @($Msg.en.Keys | Where-Object { -not $Msg.tr.ContainsKey($_) })

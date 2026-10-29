@@ -52,7 +52,7 @@ A small Windows tool that checks whether your PC's drivers are up to date, shows
 
 ## Usage
 
-1. Download the repository: **Code → Download ZIP**, then extract it.
+1. Download the latest ZIP from [**Releases**](https://github.com/SelamiKalay/pc-driver-check/releases/latest) and extract it. (Each release also has a `.sha256` file; `Get-FileHash <zip>` should print the same value.)
    > If Windows blocks the files, right-click the ZIP → **Properties** → tick **Unblock** → OK, then extract again.
 2. Double-click **`Check-Drivers.bat`**.
 3. Click **Yes** in the administrator prompt.
@@ -77,7 +77,9 @@ Check-Drivers.bat -ScanOnly          :: only list updates, install nothing
 Check-Drivers.bat -IncludeDevices    :: also show phone / USB accessory drivers
 Check-Drivers.bat -NoBackup          :: skip the driver backup before installing
 Check-Drivers.bat -NvidiaStudio      :: NVIDIA Studio drivers instead of Game Ready
-Check-Drivers.bat -ScanOnly -Report html   :: also save an HTML report next to the log```
+Check-Drivers.bat -NoUpdateCheck     :: do not check GitHub for a newer version of the tool
+Check-Drivers.bat -ScanOnly -Report html   :: also save an HTML report next to the log
+```
 
 Or call the script directly:
 
@@ -233,7 +235,7 @@ That is SmartScreen reacting to a script downloaded from the internet. Click **M
 Some OEM or very new models have a different name in NVIDIA's list. Check [nvidia.com/drivers](https://www.nvidia.com/drivers) manually. Windows Update is still scanned.
 
 **Is any data sent anywhere?**
-Only the standard requests Windows Update makes, one lookup to nvidia.com with your GPU model (NVIDIA GPUs), and on AMD GPUs one request for a fixed amd.com driver page (no data about your PC is sent). Nothing else is collected or sent.
+Only the standard requests Windows Update makes, one lookup to nvidia.com with your GPU model (NVIDIA GPUs), on AMD GPUs one request for a fixed amd.com driver page, and one request to GitHub for the latest version of this tool (turn off with `-NoUpdateCheck`; it only tells you, it never downloads anything). No data about your PC is sent in the last two. Nothing else is collected or sent.
 
 ## Tests
 
@@ -248,6 +250,10 @@ powershell -ExecutionPolicy Bypass -File .\tests\PC-Driver-Check.Tests.ps1
 They run on every push and pull request with GitHub Actions on Windows PowerShell 5.1 and
 PowerShell 7, followed by [PSScriptAnalyzer](https://github.com/PowerShell/PSScriptAnalyzer)
 (rules in `PSScriptAnalyzerSettings.psd1`).
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md). Releases are built by GitHub Actions from a `vX.Y.Z` tag: tests run again, the tag must match `$Version` in the script, and the ZIP plus its SHA256 are attached to the release.
 
 ## License
 
