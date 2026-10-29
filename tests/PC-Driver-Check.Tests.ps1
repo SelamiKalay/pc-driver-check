@@ -78,6 +78,8 @@ function Invoke-WebRequest {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', '', Justification = 'test mock')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'same signature as the cmdlet')]
     param($Uri, [switch]$UseBasicParsing)
+    $script:lastPage = $Uri
+    if ($Uri -match 'amd\.com') { return [pscustomobject]@{ Content = $script:fakeAmdPage } }
     [pscustomobject]@{ Content = $fakeProducts }
 }
 function Invoke-RestMethod {
@@ -115,6 +117,45 @@ Check 'unknown model -> NoMatch' (Find-NvidiaDriver $other 57).Status 'NoMatch'
 
 $noVer = [pscustomobject]@{ Name = 'NVIDIA GeForce RTX 4070'; DriverVersion = $null }
 Check 'unreadable version -> NoVersion' (Find-NvidiaDriver $noVer 57).Status 'NoVersion'
+
+Write-Host '--- Get-AmdBranch'
+Check 'RX 7900 XTX' (Get-AmdBranch 'AMD Radeon RX 7900 XTX') 'Mainline'
+Check 'RX 9070 XT' (Get-AmdBranch 'AMD Radeon RX 9070 XT') 'Mainline'
+Check 'RX 6600M (laptop)' (Get-AmdBranch 'AMD Radeon RX 6600M') 'Mainline'
+Check 'RX 5500 XT is not RX 550' (Get-AmdBranch 'AMD Radeon RX 5500 XT') 'Mainline'
+Check 'Radeon 780M iGPU' (Get-AmdBranch 'AMD Radeon(TM) 780M') 'Mainline'
+Check 'RX 580' (Get-AmdBranch 'Radeon RX 580 Series') 'Legacy'
+Check 'RX 550' (Get-AmdBranch 'AMD Radeon RX 550') 'Legacy'
+Check 'RX 7600S (laptop)' (Get-AmdBranch 'AMD Radeon RX 7600S') 'Mainline'
+Check 'RX 560X (laptop)' (Get-AmdBranch 'Radeon RX 560X Series') 'Legacy'
+Check 'Vega 8 iGPU' (Get-AmdBranch 'AMD Radeon(TM) Vega 8 Graphics') 'Legacy'
+Check 'generic APU name -> unknown' ($null -eq (Get-AmdBranch 'AMD Radeon(TM) Graphics')) $true
+Check 'upper-case name (Turkish I)' (Get-AmdBranch 'AMD RADEON RX 7600') 'Mainline'
+
+Write-Host '--- Test-AmdVendor'
+Check 'Advanced Micro Devices, Inc.' (Test-AmdVendor 'Advanced Micro Devices, Inc.') $true
+Check 'ATI Technologies Inc.' (Test-AmdVendor 'ATI Technologies Inc.') $true
+Check 'NVIDIA Corporation (has "ati")' (Test-AmdVendor 'NVIDIA Corporation') $false
+Check 'Intel Corporation' (Test-AmdVendor 'Intel Corporation') $false
+
+Write-Host '--- Find-AmdDriver (mocked amd.com)'
+$script:fakeAmdPage = '<a href="https://drivers.amd.com/drivers/whql-amd-software-adrenalin-edition-26.10.1-win11-b.exe">' +
+    '<a href="https://drivers.amd.com/drivers/whql-amd-software-adrenalin-edition-26.9.2-win11-a.exe">Release Notes 24.9.1</a>'
+Check 'page -> newest version' (Get-AdrenalinLatest $script:fakeAmdPage) '26.10.1'
+Check '26.10.1 > 26.9.2 (not string order)' (Get-AdrenalinLatest 'whql-amd-software-adrenalin-edition-26.9.2 whql-amd-software-adrenalin-edition-26.10.1') '26.10.1'
+Check 'no version on page' ($null -eq (Get-AdrenalinLatest '<html></html>')) $true
+$rx = [pscustomobject]@{ Name = 'AMD Radeon RX 7800 XT' }
+$r = Find-AmdDriver $rx '26.5.1'
+Check 'older Adrenalin -> Update' "$($r.Status) $($r.Installed) -> $($r.Latest)" 'Update 26.5.1 -> 26.10.1'
+Check 'mainline reference page' ($script:lastPage -match 'rx-7900-xtx') $true
+Check 'same version -> Current' (Find-AmdDriver $rx '26.10.1').Status 'Current'
+Check 'no Adrenalin installed -> NoVersion' (Find-AmdDriver $rx $null).Status 'NoVersion'
+[void](Find-AmdDriver ([pscustomobject]@{ Name = 'Radeon RX 590' }) '26.5.2')
+Check 'legacy GPU -> Vega/Polaris page' ($script:lastPage -match 'vega-64') $true
+Check 'unknown GPU -> UnknownGpu, no request' (Find-AmdDriver ([pscustomobject]@{ Name = 'AMD Radeon(TM) Graphics' }) '26.5.1').Status 'UnknownGpu'
+$script:fakeAmdPage = '<html>page changed</html>'
+$threw = $false; try { [void](Find-AmdDriver $rx '26.5.1') } catch { $threw = $true }
+Check 'page without versions -> error, not "Current"' $threw $true
 
 Write-Host '--- Get-DeviceProblemKey'
 Check 'code 28 (no driver)' (Get-DeviceProblemKey 28) 'DevCode28'

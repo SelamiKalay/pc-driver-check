@@ -137,9 +137,14 @@ RESTART your PC.
 |---|---|---|
 | **Windows Update** | All devices: chipset, audio, network, Bluetooth, storage, GPUs, … | Uses the built-in Windows Update Agent. Only drivers Microsoft has published for *your* hardware IDs are offered. |
 | **NVIDIA official service** | NVIDIA GeForce GPUs (desktop and laptop) | Looks up your exact GPU model on nvidia.com and compares it with the installed version. Only a **newer** version is offered. When this check succeeds, the NVIDIA display driver from Windows Update is hidden so it can never downgrade you. |
+| **amd.com** (check only) | AMD Radeon GPUs | Reads the installed AMD Software (Adrenalin) version and compares it with the latest one on amd.com for your GPU's generation: RX 5000–9000 and Radeon 6x0M–8x0M share one release, RX 400/500 and Vega get a separate maintenance release. If a newer version exists, the tool **tells you** to install it from AMD Software or amd.com; it does not download it (AMD has no public driver API and its download server rejects direct links). When Adrenalin is up to date, the AMD display driver from Windows Update is hidden so it cannot replace Adrenalin with an older package. |
 
-**AMD and Intel GPUs** are checked through Windows Update. Their own tools usually have newer releases:
-[AMD Software: Adrenalin Edition](https://www.amd.com/en/support/download/drivers.html) · [Intel Driver & Support Assistant](https://www.intel.com/content/www/us/en/support/detect.html).
+GPUs whose generation cannot be recognised from the name (many APUs just say *AMD Radeon(TM) Graphics*) are pointed to AMD's auto-detect tool. On AMD CPUs the tool also reminds you that Ryzen chipset drivers come from amd.com.
+
+**Intel GPUs** are checked through Windows Update. Intel's own tool usually has newer releases:
+[Intel Driver & Support Assistant](https://www.intel.com/content/www/us/en/support/detect.html) · AMD: [AMD Software: Adrenalin Edition](https://www.amd.com/en/support/download/drivers.html).
+
+> The AMD check has been tested against amd.com and with sample data, but not yet on a real AMD PC. If it reports something wrong on yours, please [open an issue](https://github.com/SelamiKalay/pc-driver-check/issues).
 
 ## Hardware health
 
@@ -203,7 +208,7 @@ That is SmartScreen reacting to a script downloaded from the internet. Click **M
 Some OEM or very new models have a different name in NVIDIA's list. Check [nvidia.com/drivers](https://www.nvidia.com/drivers) manually. Windows Update is still scanned.
 
 **Is any data sent anywhere?**
-Only the standard requests Windows Update makes, and one lookup to nvidia.com with your GPU model. Nothing else is collected or sent.
+Only the standard requests Windows Update makes, one lookup to nvidia.com with your GPU model (NVIDIA GPUs), and on AMD GPUs one request for a fixed amd.com driver page (no data about your PC is sent). Nothing else is collected or sent.
 
 ## Tests
 

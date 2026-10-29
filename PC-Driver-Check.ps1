@@ -89,6 +89,13 @@ $Msg = @{
         NvNoMatch      = '{0}: model NVIDIA listesinde bulunamadı. nvidia.com/drivers adresinden elle kontrol edin.'
         NvNoVersion    = '{0}: kurulu sürücü sürümü okunamadı ({1}). nvidia.com/drivers adresinden elle kontrol edin.'
         NvFailed       = 'NVIDIA servisine ulaşılamadı: {0}'
+        AmdCheck       = 'AMD sürücüsü kontrol ediliyor: {0}'
+        AmdUpToDate    = '{0}: güncel (Adrenalin {1})'
+        AmdUpdate      = '{0}: yeni sürüm var, Adrenalin {1} -> {2}. AMD Software içinden ya da amd.com/support adresinden kurun.'
+        AmdNoVersion   = '{0}: kurulu Adrenalin sürümü okunamadı; en son sürüm {1}. amd.com/support adresinden kontrol edin.'
+        AmdUnknownGpu  = '{0}: kartın nesli belirlenemedi. amd.com/support adresindeki otomatik algılama aracını kullanın.'
+        AmdFailed      = 'AMD sitesinden sürüm okunamadı: {0}'
+        AmdChipset     = 'AMD işlemci: yonga seti sürücüleri için amd.com/support (Windows Update''tekiler genelde daha eskidir).'
         NoUpdates      = 'Tüm sürücüler güncel.'
         Found          = 'Bulunan güncellemeler'
         ScanOnlyDone   = '-ScanOnly: hiçbir şey kurulmadı.'
@@ -169,6 +176,13 @@ $Msg = @{
         NvNoMatch      = '{0}: model not found in NVIDIA''s list. Check nvidia.com/drivers manually.'
         NvNoVersion    = '{0}: could not read the installed driver version ({1}). Check nvidia.com/drivers manually.'
         NvFailed       = 'Could not reach NVIDIA''s service: {0}'
+        AmdCheck       = 'Checking AMD driver: {0}'
+        AmdUpToDate    = '{0}: up to date (Adrenalin {1})'
+        AmdUpdate      = '{0}: newer version available, Adrenalin {1} -> {2}. Install it from AMD Software or amd.com/support.'
+        AmdNoVersion   = '{0}: could not read the installed Adrenalin version; latest is {1}. Check amd.com/support.'
+        AmdUnknownGpu  = '{0}: GPU generation not recognised. Use the auto-detect tool on amd.com/support.'
+        AmdFailed      = 'Could not read the version from AMD''s site: {0}'
+        AmdChipset     = 'AMD CPU: get chipset drivers from amd.com/support (the ones on Windows Update are usually older).'
         NoUpdates      = 'All drivers are up to date.'
         Found          = 'Available updates'
         ScanOnlyDone   = '-ScanOnly: nothing was installed.'
@@ -258,6 +272,29 @@ function Read-Selection([string]$text, [int]$count) {
     }
     if (@($picked | Where-Object { $_ -lt 1 -or $_ -gt $count }).Count) { return $null }
     ,@($picked | Sort-Object -Unique)
+}
+
+# AMD GPU name -> Adrenalin branch. RDNA (RX 5000-9000, Radeon 6x0M-8x0M iGPUs) share one
+# release; Polaris / Vega (RX 400/500, Vega, Radeon VII) get a separate maintenance release.
+# $null: generation unknown (e.g. "AMD Radeon(TM) Graphics" on many APUs).
+function Get-AmdBranch([string]$name) {
+    $opt = 'IgnoreCase, CultureInvariant'
+    # Suffixes: M / S laptop (RX 6600M, RX 7600S), X refresh (RX 560X)
+    if ([regex]::IsMatch($name, '\bRX\s*[5-9]\d{3}[MS]?\b', $opt) -or [regex]::IsMatch($name, '\bRadeon\b.*\b[678]\d0M\b', $opt)) { return 'Mainline' }
+    if ([regex]::IsMatch($name, '\bRX\s*[45]\d0X?\b|\bVega\b|\bRadeon VII\b', $opt)) { return 'Legacy' }
+    $null
+}
+
+# WU driver manufacturer is AMD. Whole words: "ATI" must not match "NVIDIA Corporation".
+function Test-AmdVendor([string]$manufacturer) {
+    [regex]::IsMatch($manufacturer, '\b(AMD|Advanced Micro Devices|ATI)\b', 'IgnoreCase, CultureInvariant')
+}
+
+# amd.com driver page HTML -> newest Adrenalin version in its installer file names
+function Get-AdrenalinLatest([string]$html) {
+    [regex]::Matches($html, 'whql-amd-software-adrenalin-edition-(\d+\.\d+\.\d+)') |
+        ForEach-Object { [version]$_.Groups[1].Value } | Sort-Object -Descending | Select-Object -First 1 |
+        ForEach-Object { $_.ToString() }
 }
 
 # Device Manager error code -> message key (22 = disabled, 45 = not plugged in: not shown at all)
@@ -392,6 +429,29 @@ function Find-WUDrivers {
             Update       = $u
         }
     }
+}
+
+# Installed AMD Software (Adrenalin) version, e.g. "26.5.1", or $null
+function Get-AdrenalinVersion {
+    $v = (Get-ItemProperty 'HKLM:\SOFTWARE\AMD\CN' -EA SilentlyContinue).RadeonSoftwareVersion
+    if (-not $v) {
+        $v = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' -EA SilentlyContinue |
+            Where-Object { $_.DisplayName -like 'AMD Software*' } | Select-Object -ExpandProperty DisplayVersion -First 1
+    }
+    if ("$v" -match '^\d+\.\d+\.\d+') { $Matches[0] }
+}
+
+# Information only: AMD has no public driver API, and its download server rejects direct links.
+# The latest version is read from a reference product page of the GPU's branch.
+function Find-AmdDriver($gpu, [string]$installed) {
+    $branch = Get-AmdBranch $gpu.Name
+    if (-not $branch) { return [pscustomobject]@{ Status = 'UnknownGpu'; Gpu = $gpu.Name } }
+    $page = 'https://www.amd.com/en/support/downloads/drivers.html/graphics/radeon-rx/' +
+        $(if ($branch -eq 'Legacy') { 'radeon-rx-vega-series/radeon-rx-vega-64.html' } else { 'radeon-rx-7000-series/amd-radeon-rx-7900-xtx.html' })
+    $latest = Get-AdrenalinLatest (Invoke-WebRequest $page -UseBasicParsing).Content
+    if (-not $latest) { throw "no Adrenalin version found on $page" }
+    $status = if (-not $installed) { 'NoVersion' } elseif ([version]$latest -gt [version]$installed) { 'Update' } else { 'Current' }
+    [pscustomobject]@{ Status = $status; Gpu = $gpu.Name; Branch = $branch; Installed = $installed; Latest = $latest }
 }
 
 function Find-NvidiaDriver($gpu, [int]$osId) {
@@ -574,7 +634,8 @@ try {
     $gpus = @(Get-CimInstance Win32_VideoController | Where-Object { $_.PNPDeviceID -match '^PCI\\' })
     Write-Host ("{0,-12} {1} {2}" -f (M Model), $cs.Manufacturer, $cs.Model)
     Write-Host ("{0,-12} {1} (build {2})" -f (M Os), $os.Caption, $os.BuildNumber)
-    Write-Host ("{0,-12} {1}" -f (M Cpu), (Get-CimInstance Win32_Processor | Select-Object -First 1).Name.Trim())
+    $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+    Write-Host ("{0,-12} {1}" -f (M Cpu), $cpu.Name.Trim())
     foreach ($g in $gpus) { Write-Host ("{0,-12} {1}  [{2}]" -f (M Gpu), $g.Name, $g.DriverVersion) }
 
     # --- Hardware health (information only, never changes anything) ---
@@ -622,12 +683,32 @@ try {
         } catch { Say-Warn (M NvFailed $_.Exception.Message); $exitCode = 1 }
     }
 
+    # --- AMD (information only, see Find-AmdDriver) ---
+    if ($cpu.Manufacturer -eq 'AuthenticAMD') { Say-Info (M AmdChipset) }
+    $amdGpus = @($gpus | Where-Object { $_.PNPDeviceID -match 'VEN_1002' } | Sort-Object Name -Unique)
+    $amdCurrent = $false
+    if ($amdGpus) { $adrenalin = Get-AdrenalinVersion }
+    foreach ($g in $amdGpus) {
+        Say-Info (M AmdCheck $g.Name)
+        try {
+            $r = Find-AmdDriver $g $adrenalin
+            switch ($r.Status) {
+                'Current'    { Say-Ok (M AmdUpToDate $g.Name $r.Installed); $amdCurrent = $true }
+                'Update'     { Say-Warn (M AmdUpdate $g.Name $r.Installed $r.Latest) }
+                'NoVersion'  { Say-Warn (M AmdNoVersion $g.Name $r.Latest) }
+                'UnknownGpu' { Say-Warn (M AmdUnknownGpu $g.Name) }
+            }
+        } catch { Say-Warn (M AmdFailed $_.Exception.Message); $exitCode = 1 }
+    }
+
     # --- Windows Update ---
     Say-Info (M WuScan)
     try {
         $wu = @(Find-WUDrivers)
         # NVIDIA's own service is newer; drop WU's NVIDIA display driver so it can't downgrade
         if ($nvChecked) { $wu = @($wu | Where-Object { -not ($_.Class -eq 'Display' -and $_.Manufacturer -match 'NVIDIA') }) }
+        # Adrenalin is already the newest: WU's AMD display driver could only swap it for an older OEM package
+        if ($amdCurrent) { $wu = @($wu | Where-Object { -not ($_.Class -eq 'Display' -and (Test-AmdVendor $_.Manufacturer)) }) }
         if (-not $IncludeDevices) {
             $acc = @($wu | Where-Object { Test-AccessoryDriver $_.Class $_.Title })
             if ($acc) { Say-Info (M WuHidden $acc.Count) }

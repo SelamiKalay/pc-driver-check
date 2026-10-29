@@ -137,9 +137,14 @@ Bilgisayarı YENİDEN BAŞLATIN.
 |---|---|---|
 | **Windows Update** | Tüm aygıtlar: yonga seti, ses, ağ, Bluetooth, depolama, ekran kartları, … | Windows'un kendi Windows Update Agent'ını kullanır. Sadece Microsoft'un *senin* donanım kimliklerin için yayınladığı sürücüler gelir. |
 | **NVIDIA resmi servisi** | NVIDIA GeForce ekran kartları (masaüstü ve laptop) | Tam ekran kartı modelini nvidia.com'da arar ve kurulu sürümle karşılaştırır. Sadece **daha yeni** sürüm önerilir. Bu kontrol başarılı olursa Windows Update'teki NVIDIA ekran sürücüsü gizlenir; böylece sürücün asla eski sürüme düşürülmez. |
+| **amd.com** (sadece kontrol) | AMD Radeon ekran kartları | Kurulu AMD Software (Adrenalin) sürümünü okur ve kartının nesli için amd.com'daki en son sürümle karşılaştırır: RX 5000–9000 ve Radeon 6x0M–8x0M aynı sürümü kullanır, RX 400/500 ve Vega ayrı bir bakım sürümü alır. Daha yeni sürüm varsa araç bunu **söyler** ve AMD Software'den ya da amd.com'dan kurmanı ister; kendisi indirmez (AMD'nin herkese açık bir sürücü API'si yok ve indirme sunucusu doğrudan bağlantıları reddediyor). Adrenalin güncelse Windows Update'teki AMD ekran sürücüsü gizlenir; böylece Adrenalin daha eski bir paketle değiştirilmez. |
 
-**AMD ve Intel ekran kartları** Windows Update üzerinden kontrol edilir. Kendi araçlarında genelde daha yeni sürümler bulunur:
-[AMD Software: Adrenalin Edition](https://www.amd.com/en/support/download/drivers.html) · [Intel Driver & Support Assistant](https://www.intel.com/content/www/us/en/support/detect.html).
+Adından nesli anlaşılamayan kartlar (birçok APU sadece *AMD Radeon(TM) Graphics* yazar) AMD'nin otomatik algılama aracına yönlendirilir. İşlemci AMD ise araç ayrıca Ryzen yonga seti sürücülerinin amd.com'dan geldiğini hatırlatır.
+
+**Intel ekran kartları** Windows Update üzerinden kontrol edilir. Intel'in kendi aracında genelde daha yeni sürümler bulunur:
+[Intel Driver & Support Assistant](https://www.intel.com/content/www/us/en/support/detect.html) · AMD: [AMD Software: Adrenalin Edition](https://www.amd.com/en/support/download/drivers.html).
+
+> AMD kontrolü amd.com'a karşı ve örnek verilerle test edildi, ancak henüz gerçek bir AMD bilgisayarda denenmedi. Seninkinde yanlış bir şey gösterirse lütfen [bir issue aç](https://github.com/SelamiKalay/pc-driver-check/issues).
 
 ## Donanım sağlığı
 
@@ -203,7 +208,7 @@ Bu, internetten indirilen bir script'e SmartScreen'in tepkisi. **Ek bilgi → Yi
 Bazı OEM ya da çok yeni modellerin NVIDIA listesindeki adı farklı olabiliyor. [nvidia.com/drivers](https://www.nvidia.com/drivers) adresinden elle kontrol et. Windows Update yine taranır.
 
 **Bir yere veri gönderiliyor mu?**
-Sadece Windows Update'in standart istekleri ve ekran kartı modelinle nvidia.com'a yapılan bir sorgu. Başka hiçbir şey toplanmaz ya da gönderilmez.
+Sadece Windows Update'in standart istekleri, NVIDIA kartlarda ekran kartı modelinle nvidia.com'a yapılan bir sorgu ve AMD kartlarda amd.com'daki sabit bir sürücü sayfasına yapılan bir istek (bilgisayarınla ilgili hiçbir veri gönderilmez). Başka hiçbir şey toplanmaz ya da gönderilmez.
 
 ## Testler
 
