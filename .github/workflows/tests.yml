@@ -1,0 +1,23 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.shell }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows PowerShell 5.1 (kullanicilarin calistirdigi) ve PowerShell 7
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Birim testleri
+        shell: ${{ matrix.shell }}
+        run: ./tests/PC-Driver-Check.Tests.ps1
