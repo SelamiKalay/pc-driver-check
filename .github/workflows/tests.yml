@@ -8,16 +8,16 @@ on:
 
 jobs:
   test:
-    name: ${{ matrix.shell }}
+    name: Windows PowerShell 5.1 / PowerShell 7
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # Windows PowerShell 5.1 (kullanicilarin calistirdigi) ve PowerShell 7
-        shell: [powershell, pwsh]
     steps:
       - uses: actions/checkout@v5
 
-      - name: Birim testleri
-        shell: ${{ matrix.shell }}
+      # Kullanicilarin calistirdigi surum
+      - name: Birim testleri (Windows PowerShell 5.1)
+        shell: powershell
+        run: ./tests/PC-Driver-Check.Tests.ps1
+
+      - name: Birim testleri (PowerShell 7)
+        shell: pwsh
         run: ./tests/PC-Driver-Check.Tests.ps1
