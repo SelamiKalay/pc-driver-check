@@ -76,6 +76,7 @@ Aracın klasöründe bir terminal açıp:
 Check-Drivers.bat -ScanOnly          :: sadece listele, hiçbir şey kurma
 Check-Drivers.bat -IncludeDevices    :: telefon / USB aksesuar sürücülerini de göster
 Check-Drivers.bat -NoBackup          :: kurulumdan önce sürücü yedeği alma
+Check-Drivers.bat -NvidiaStudio      :: Game Ready yerine NVIDIA Studio sürücüleri
 ```
 
 Ya da script'i doğrudan çalıştır:
@@ -136,7 +137,7 @@ Bilgisayarı YENİDEN BAŞLATIN.
 | Kaynak | Kapsam | Not |
 |---|---|---|
 | **Windows Update** | Tüm aygıtlar: yonga seti, ses, ağ, Bluetooth, depolama, ekran kartları, … | Windows'un kendi Windows Update Agent'ını kullanır. Sadece Microsoft'un *senin* donanım kimliklerin için yayınladığı sürücüler gelir. |
-| **NVIDIA resmi servisi** | NVIDIA GeForce ekran kartları (masaüstü ve laptop) | Tam ekran kartı modelini nvidia.com'da arar ve kurulu sürümle karşılaştırır. Sadece **daha yeni** sürüm önerilir. Bu kontrol başarılı olursa Windows Update'teki NVIDIA ekran sürücüsü gizlenir; böylece sürücün asla eski sürüme düşürülmez. |
+| **NVIDIA resmi servisi** | NVIDIA GeForce ekran kartları (masaüstü ve laptop) | Tam ekran kartı modelini nvidia.com'da arar ve kurulu sürümle karşılaştırır. Sadece **daha yeni** sürüm önerilir. Bu kontrol başarılı olursa Windows Update'teki NVIDIA ekran sürücüsü gizlenir; böylece sürücün asla eski sürüme düşürülmez. `-NvidiaStudio` ile Game Ready yerine **Studio** sürücüsü (yaratıcı uygulamalar için) aranır; kurulu sürücü zaten daha yeniyse (örneğin bir Game Ready sürümü) hiçbir şey önerilmez. |
 | **amd.com** (sadece kontrol) | AMD Radeon ekran kartları | Kurulu AMD Software (Adrenalin) sürümünü okur ve kartının nesli için amd.com'daki en son sürümle karşılaştırır: RX 5000–9000 ve Radeon 6x0M–8x0M aynı sürümü kullanır, RX 400/500 ve Vega ayrı bir bakım sürümü alır. Daha yeni sürüm varsa araç bunu **söyler** ve AMD Software'den ya da amd.com'dan kurmanı ister; kendisi indirmez (AMD'nin herkese açık bir sürücü API'si yok ve indirme sunucusu doğrudan bağlantıları reddediyor). Adrenalin güncelse Windows Update'teki AMD ekran sürücüsü gizlenir; böylece Adrenalin daha eski bir paketle değiştirilmez. |
 
 Adından nesli anlaşılamayan kartlar (birçok APU sadece *AMD Radeon(TM) Graphics* yazar) AMD'nin otomatik algılama aracına yönlendirilir. İşlemci AMD ise araç ayrıca Ryzen yonga seti sürücülerinin amd.com'dan geldiğini hatırlatır.

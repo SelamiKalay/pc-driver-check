@@ -15,6 +15,10 @@
 .PARAMETER IncludeDevices
     Also show phone / USB accessory drivers (hidden by default).
 
+.PARAMETER NvidiaStudio
+    Offer NVIDIA Studio drivers (for creative apps) instead of Game Ready drivers.
+    A newer Game Ready driver that is already installed is never downgraded.
+
 .PARAMETER NoBackup
     Do not back up the current drivers of the devices being updated
     (by default they are exported to %ProgramData%\PC-Driver-Check\backups).
@@ -31,7 +35,8 @@
 param(
     [switch]$ScanOnly,
     [switch]$IncludeDevices,
-    [switch]$NoBackup
+    [switch]$NoBackup,
+    [switch]$NvidiaStudio
 )
 
 $ErrorActionPreference = 'Stop'
@@ -454,7 +459,9 @@ function Find-AmdDriver($gpu, [string]$installed) {
     [pscustomobject]@{ Status = $status; Gpu = $gpu.Name; Branch = $branch; Installed = $installed; Latest = $latest }
 }
 
-function Find-NvidiaDriver($gpu, [int]$osId) {
+# $studio: NVIDIA Studio instead of Game Ready. The service returns Studio drivers only with
+# isWHQL=0 + upCRD=1 (isWHQL=1 + upCRD=1 comes back empty); they are still signature-checked.
+function Find-NvidiaDriver($gpu, [int]$osId, [switch]$studio) {
     $installed = ConvertTo-NvidiaVersion $gpu.DriverVersion
     if (-not $installed) { return [pscustomobject]@{ Status = 'NoVersion'; Gpu = $gpu.Name; Raw = $gpu.DriverVersion } }
     $products = [xml](Invoke-WebRequest 'https://www.nvidia.com/Download/API/lookupValueSearch.aspx?TypeID=3' -UseBasicParsing).Content
@@ -464,12 +471,16 @@ function Find-NvidiaDriver($gpu, [int]$osId) {
     if (-not $match) { return [pscustomobject]@{ Status = 'NoMatch'; Gpu = $gpu.Name } }
 
     $url = 'https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php' +
-           "?func=DriverManualLookup&psid=$($match.ParentID)&pfid=$($match.Value)&osID=$osId&languageCode=1033&isWHQL=1&dch=1&sort1=0&numberOfResults=1"
+           "?func=DriverManualLookup&psid=$($match.ParentID)&pfid=$($match.Value)&osID=$osId&languageCode=1033&dch=1&sort1=0&numberOfResults=1" +
+           $(if ($studio) { '&isWHQL=0&upCRD=1' } else { '&isWHQL=1&upCRD=0' })
     $resp = Invoke-RestMethod $url -UseBasicParsing
     if ($resp -is [string]) { $resp = $resp | ConvertFrom-Json }   # served as text/html
     $info = @($resp.IDS)[0].downloadInfo
     $latest = [string]$info.Version
     if ($latest -notmatch '^\d+\.\d+$') { return [pscustomobject]@{ Status = 'NoMatch'; Gpu = $gpu.Name } }   # no driver for this GPU/OS
+    # Never install a Game Ready driver when Studio was asked for (e.g. if the service ignored upCRD)
+    $name = [uri]::UnescapeDataString([string]$info.Name)
+    if ($studio -and $name -notmatch 'Studio') { return [pscustomobject]@{ Status = 'NoMatch'; Gpu = $gpu.Name } }
 
     [pscustomobject]@{
         Status    = if ([version]$latest -gt [version]$installed) { 'Update' } else { 'Current' }
@@ -478,7 +489,7 @@ function Find-NvidiaDriver($gpu, [int]$osId) {
         DeviceId  = $gpu.PNPDeviceID
         Installed = $installed
         Latest    = $latest
-        Title     = "$($gpu.Name)  $installed -> $latest"
+        Title     = "$($gpu.Name)  $installed -> $latest$(if ($studio) { ' (Studio)' })"
         Class     = 'Display'
         Date      = $info.ReleaseDateTime
         SizeMB    = $info.DownloadURLFileSize
@@ -671,9 +682,9 @@ try {
     $nvOsId = Get-NvidiaOsId $os.BuildNumber
     $nvChecked = $false
     foreach ($g in $nvGpus) {
-        Say-Info (M NvCheck $g.Name)
+        Say-Info (M NvCheck "$($g.Name)$(if ($NvidiaStudio) { ' (Studio)' })")
         try {
-            $r = Find-NvidiaDriver $g $nvOsId
+            $r = Find-NvidiaDriver $g $nvOsId -studio:$NvidiaStudio
             switch ($r.Status) {
                 'Update'    { $items += $r; $nvChecked = $true }
                 'Current'   { Say-Ok (M NvUpToDate $g.Name $r.Installed); $nvChecked = $true }

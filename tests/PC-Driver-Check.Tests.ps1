@@ -89,9 +89,9 @@ function Invoke-RestMethod {
     $script:lastUrl = $Uri
     $script:fakeDriver
 }
-function New-FakeDriver($version) {
+function New-FakeDriver($version, $name = 'GeForce%20Game%20Ready%20Driver') {
     # Servis JSON'u text/html olarak donduruyor, yani Invoke-RestMethod string verir
-    '{"Success":"1","IDS":[{"downloadInfo":{"Version":"' + $version + '","ReleaseDateTime":"Wed Oct 21, 2026",' +
+    '{"Success":"1","IDS":[{"downloadInfo":{"Version":"' + $version + '","Name":"' + $name + '","ReleaseDateTime":"Wed Oct 21, 2026",' +
     '"DownloadURLFileSize":"1.04 GB","DownloadURL":"https://us.download.nvidia.com/Windows/' + $version + '/x.exe"}}]}'
 }
 $gpu = [pscustomobject]@{ Name = 'NVIDIA GeForce RTX 4070 Laptop GPU'; DriverVersion = '32.0.15.5222' }
@@ -117,6 +117,19 @@ Check 'unknown model -> NoMatch' (Find-NvidiaDriver $other 57).Status 'NoMatch'
 
 $noVer = [pscustomobject]@{ Name = 'NVIDIA GeForce RTX 4070'; DriverVersion = $null }
 Check 'unreadable version -> NoVersion' (Find-NvidiaDriver $noVer 57).Status 'NoVersion'
+
+Write-Host '--- Find-NvidiaDriver -studio (mocked service)'
+$script:fakeDriver = New-FakeDriver '617.42' 'NVIDIA%20Studio%20Driver'
+$r = Find-NvidiaDriver $gpu 135 -studio
+Check 'Studio newer than installed -> Update' "$($r.Status) $($r.Latest)" 'Update 617.42'
+Check 'Studio query: isWHQL=0 + upCRD=1' ($script:lastUrl -match '&isWHQL=0&upCRD=1') $true
+Check 'Studio in title' ($r.Title -match '\(Studio\)$') $true
+[void](Find-NvidiaDriver $gpu 135)
+Check 'Game Ready query: isWHQL=1 + upCRD=0' ($script:lastUrl -match '&isWHQL=1&upCRD=0') $true
+$newer = [pscustomobject]@{ Name = 'NVIDIA GeForce RTX 4070 Laptop GPU'; DriverVersion = '32.0.16.2101' }   # 621.01 Game Ready
+Check 'Game Ready 621.01 installed, Studio 617.42 -> no downgrade' (Find-NvidiaDriver $newer 135 -studio).Status 'Current'
+$script:fakeDriver = New-FakeDriver '621.01'
+Check 'service ignores Studio, returns Game Ready -> NoMatch' (Find-NvidiaDriver $gpu 135 -studio).Status 'NoMatch'
 
 Write-Host '--- Get-AmdBranch'
 Check 'RX 7900 XTX' (Get-AmdBranch 'AMD Radeon RX 7900 XTX') 'Mainline'

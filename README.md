@@ -76,6 +76,7 @@ Run from a terminal in the tool's folder:
 Check-Drivers.bat -ScanOnly          :: only list updates, install nothing
 Check-Drivers.bat -IncludeDevices    :: also show phone / USB accessory drivers
 Check-Drivers.bat -NoBackup          :: skip the driver backup before installing
+Check-Drivers.bat -NvidiaStudio      :: NVIDIA Studio drivers instead of Game Ready
 ```
 
 Or call the script directly:
@@ -136,7 +137,7 @@ RESTART your PC.
 | Source | Covers | Notes |
 |---|---|---|
 | **Windows Update** | All devices: chipset, audio, network, Bluetooth, storage, GPUs, … | Uses the built-in Windows Update Agent. Only drivers Microsoft has published for *your* hardware IDs are offered. |
-| **NVIDIA official service** | NVIDIA GeForce GPUs (desktop and laptop) | Looks up your exact GPU model on nvidia.com and compares it with the installed version. Only a **newer** version is offered. When this check succeeds, the NVIDIA display driver from Windows Update is hidden so it can never downgrade you. |
+| **NVIDIA official service** | NVIDIA GeForce GPUs (desktop and laptop) | Looks up your exact GPU model on nvidia.com and compares it with the installed version. Only a **newer** version is offered. When this check succeeds, the NVIDIA display driver from Windows Update is hidden so it can never downgrade you. With `-NvidiaStudio` the **Studio** driver (for creative apps) is looked up instead of Game Ready; if the installed driver is already newer (for example a Game Ready release), nothing is offered. |
 | **amd.com** (check only) | AMD Radeon GPUs | Reads the installed AMD Software (Adrenalin) version and compares it with the latest one on amd.com for your GPU's generation: RX 5000–9000 and Radeon 6x0M–8x0M share one release, RX 400/500 and Vega get a separate maintenance release. If a newer version exists, the tool **tells you** to install it from AMD Software or amd.com; it does not download it (AMD has no public driver API and its download server rejects direct links). When Adrenalin is up to date, the AMD display driver from Windows Update is hidden so it cannot replace Adrenalin with an older package. |
 
 GPUs whose generation cannot be recognised from the name (many APUs just say *AMD Radeon(TM) Graphics*) are pointed to AMD's auto-detect tool. On AMD CPUs the tool also reminds you that Ryzen chipset drivers come from amd.com.
