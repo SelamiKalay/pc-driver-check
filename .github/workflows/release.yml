@@ -55,5 +55,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $name = "PC-Driver-Check-$env:TAG"
-          gh release create $env:TAG "dist/$name.zip" "dist/$name.zip.sha256" --title "PC-Driver-Check $env:TAG" --notes-file dist/notes.md
+          $assets = "dist/$name.zip", "dist/$name.zip.sha256"
+          # Etiket yeniden push edilirse (ornegin tasinirsa) release zaten vardir: dosyalari ve notlari guncelle
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+              gh release upload $env:TAG @assets --clobber
+              if ($LASTEXITCODE) { exit $LASTEXITCODE }
+              gh release edit $env:TAG --title "PC-Driver-Check $env:TAG" --notes-file dist/notes.md
+          } else {
+              gh release create $env:TAG @assets --title "PC-Driver-Check $env:TAG" --notes-file dist/notes.md
+          }
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
