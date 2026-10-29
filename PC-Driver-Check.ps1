@@ -15,6 +15,10 @@
 .PARAMETER IncludeDevices
     Also show phone / USB accessory drivers (hidden by default).
 
+.NOTES
+    Exit codes: 0 = done / nothing to do, 1 = error or incomplete scan,
+                2 = some installs failed, 3010 = installed, restart required.
+
 .EXAMPLE
     .\Check-Drivers.bat
 .EXAMPLE
@@ -49,6 +53,7 @@ $Msg = @{
         NvCheck        = 'NVIDIA sürücüsü kontrol ediliyor: {0}'
         NvUpToDate     = '{0}: güncel ({1})'
         NvNoMatch      = '{0}: model NVIDIA listesinde bulunamadı. nvidia.com/drivers adresinden elle kontrol edin.'
+        NvNoVersion    = '{0}: kurulu sürücü sürümü okunamadı ({1}). nvidia.com/drivers adresinden elle kontrol edin.'
         NvFailed       = 'NVIDIA servisine ulaşılamadı: {0}'
         NoUpdates      = 'Tüm sürücüler güncel.'
         Found          = 'Bulunan güncellemeler'
@@ -65,6 +70,7 @@ $Msg = @{
         Downloading    = 'İndiriliyor: {0}'
         WuOk           = 'Kuruldu: {0}'
         WuFail         = 'Kurulamadı: {0} (sonuç kodu {1})'
+        WuDlFail       = 'İndirilemedi, kurulmadı: {0} (sonuç kodu {1})'
         NvSigBad       = 'İMZA GEÇERSİZ, kurulmadı: {0}'
         NvBadHost      = 'İndirme adresi nvidia.com değil, kurulmadı: {0}'
         NvOk           = 'NVIDIA sürücüsü kuruldu: {0}'
@@ -92,6 +98,7 @@ $Msg = @{
         NvCheck        = 'Checking NVIDIA driver: {0}'
         NvUpToDate     = '{0}: up to date ({1})'
         NvNoMatch      = '{0}: model not found in NVIDIA''s list. Check nvidia.com/drivers manually.'
+        NvNoVersion    = '{0}: could not read the installed driver version ({1}). Check nvidia.com/drivers manually.'
         NvFailed       = 'Could not reach NVIDIA''s service: {0}'
         NoUpdates      = 'All drivers are up to date.'
         Found          = 'Available updates'
@@ -108,6 +115,7 @@ $Msg = @{
         Downloading    = 'Downloading: {0}'
         WuOk           = 'Installed: {0}'
         WuFail         = 'Failed: {0} (result code {1})'
+        WuDlFail       = 'Download failed, not installed: {0} (result code {1})'
         NvSigBad       = 'INVALID SIGNATURE, not installed: {0}'
         NvBadHost      = 'Download URL is not nvidia.com, not installed: {0}'
         NvOk           = 'NVIDIA driver installed: {0}'
@@ -144,6 +152,11 @@ function ConvertTo-NvidiaVersion([string]$driverVersion) {
     $d = $p[2] + $p[3].PadLeft(4, '0')
     $d = $d.Substring($d.Length - 5)
     '{0}.{1}' -f [int]$d.Substring(0, 3), $d.Substring(3, 2)
+}
+
+# NVIDIA's OS id (lookupValueSearch.aspx?TypeID=4): Windows 11 = 135, Windows 10 64-bit = 57
+function Get-NvidiaOsId([int]$build) {
+    if ($build -ge 22000) { 135 } else { 57 }
 }
 
 function Get-NormalizedGpuName([string]$name) {
@@ -189,8 +202,9 @@ function Find-WUDrivers {
     }
 }
 
-function Find-NvidiaDriver($gpu) {
+function Find-NvidiaDriver($gpu, [int]$osId) {
     $installed = ConvertTo-NvidiaVersion $gpu.DriverVersion
+    if (-not $installed) { return [pscustomobject]@{ Status = 'NoVersion'; Gpu = $gpu.Name; Raw = $gpu.DriverVersion } }
     $products = [xml](Invoke-WebRequest 'https://www.nvidia.com/Download/API/lookupValueSearch.aspx?TypeID=3' -UseBasicParsing).Content
     $want = Get-NormalizedGpuName $gpu.Name
     $match = $products.LookupValueSearch.LookupValues.LookupValue |
@@ -198,11 +212,12 @@ function Find-NvidiaDriver($gpu) {
     if (-not $match) { return [pscustomobject]@{ Status = 'NoMatch'; Gpu = $gpu.Name } }
 
     $url = 'https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php' +
-           "?func=DriverManualLookup&psid=$($match.ParentID)&pfid=$($match.Value)&osID=57&languageCode=1033&isWHQL=1&dch=1&sort1=0&numberOfResults=1"
+           "?func=DriverManualLookup&psid=$($match.ParentID)&pfid=$($match.Value)&osID=$osId&languageCode=1033&isWHQL=1&dch=1&sort1=0&numberOfResults=1"
     $resp = Invoke-RestMethod $url -UseBasicParsing
     if ($resp -is [string]) { $resp = $resp | ConvertFrom-Json }   # served as text/html
-    $info = $resp.IDS[0].downloadInfo
+    $info = @($resp.IDS)[0].downloadInfo
     $latest = [string]$info.Version
+    if ($latest -notmatch '^\d+\.\d+$') { return [pscustomobject]@{ Status = 'NoMatch'; Gpu = $gpu.Name } }   # no driver for this GPU/OS
 
     [pscustomobject]@{
         Status    = if ([version]$latest -gt [version]$installed) { 'Update' } else { 'Current' }
@@ -249,12 +264,14 @@ function Install-WUDriver($item) {
     [void]$coll.Add($item.Update)
 
     Say-Info (M Downloading $item.Title)
-    $dl = $session.CreateUpdateDownloader(); $dl.Updates = $coll; [void]$dl.Download()
+    $dl = $session.CreateUpdateDownloader(); $dl.Updates = $coll
+    $dlCode = $dl.Download().ResultCode
+    if ($dlCode -notin 2, 3) { return [pscustomobject]@{ Ok = $false; Code = $dlCode; Stage = 'Download'; Reboot = $false } }
     Say-Info (M Installing $item.Title)
     $inst = $session.CreateUpdateInstaller(); $inst.Updates = $coll
     $res = $inst.Install()
     $code = $res.GetUpdateResult(0).ResultCode   # 2 = succeeded, 3 = succeeded with errors
-    [pscustomobject]@{ Ok = $code -in 2, 3; Code = $code; Reboot = [bool]$res.RebootRequired }
+    [pscustomobject]@{ Ok = $code -in 2, 3; Code = $code; Stage = 'Install'; Reboot = [bool]$res.RebootRequired }
 }
 
 function Install-NvidiaDriver($item) {
@@ -297,6 +314,7 @@ $logDir = Join-Path $Root 'logs'
 New-Item -ItemType Directory $logDir -Force | Out-Null
 $logFile = Join-Path $logDir "PC-Driver-Check_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 Start-Transcript $logFile | Out-Null
+$exitCode = 0
 
 try {
     Write-Host (M Title) -ForegroundColor White
@@ -315,17 +333,19 @@ try {
 
     # --- NVIDIA (official service) ---
     $nvGpus = @($gpus | Where-Object { $_.PNPDeviceID -match 'VEN_10DE' } | Sort-Object Name -Unique)
+    $nvOsId = Get-NvidiaOsId $os.BuildNumber
     $nvChecked = $false
     foreach ($g in $nvGpus) {
         Say-Info (M NvCheck $g.Name)
         try {
-            $r = Find-NvidiaDriver $g
+            $r = Find-NvidiaDriver $g $nvOsId
             switch ($r.Status) {
-                'Update'  { $items += $r; $nvChecked = $true }
-                'Current' { Say-Ok (M NvUpToDate $g.Name $r.Installed); $nvChecked = $true }
-                'NoMatch' { Say-Warn (M NvNoMatch $g.Name) }
+                'Update'    { $items += $r; $nvChecked = $true }
+                'Current'   { Say-Ok (M NvUpToDate $g.Name $r.Installed); $nvChecked = $true }
+                'NoMatch'   { Say-Warn (M NvNoMatch $g.Name) }
+                'NoVersion' { Say-Warn (M NvNoVersion $g.Name $r.Raw) }
             }
-        } catch { Say-Warn (M NvFailed $_.Exception.Message) }
+        } catch { Say-Warn (M NvFailed $_.Exception.Message); $exitCode = 1 }
     }
 
     # --- Windows Update ---
@@ -340,7 +360,7 @@ try {
             $wu = @($wu | Where-Object { -not (Test-AccessoryDriver $_.Class $_.Title) })
         }
         $items += $wu
-    } catch { Say-Warn (M WuFailed $_.Exception.Message) }
+    } catch { Say-Warn (M WuFailed $_.Exception.Message); $exitCode = 1 }
 
     # --- List ---
     if (-not $items) { Say-Ok (M NoUpdates); return }
@@ -377,7 +397,10 @@ try {
             $r = if ($it.Source -eq 'NVIDIA') { Install-NvidiaDriver $it } else { Install-WUDriver $it }
             if ($r.Reboot) { $reboot = $true }
             if ($r.Ok) { $okList += $it.Title; if ($it.Source -ne 'NVIDIA') { Say-Ok (M WuOk $it.Title) } }
-            else { $failList += $it.Title; if ($it.Source -ne 'NVIDIA') { Say-Warn (M WuFail $it.Title $r.Code) } }
+            else {
+                $failList += $it.Title
+                if ($it.Source -ne 'NVIDIA') { Say-Warn (M $(if ($r.Stage -eq 'Download') { 'WuDlFail' } else { 'WuFail' }) $it.Title $r.Code) }
+            }
         } catch {
             $failList += $it.Title
             Say-Warn (M WuFail $it.Title $_.Exception.Message)
@@ -389,9 +412,16 @@ try {
     if ($okList)   { Say-Ok   (M SumOk ($okList.Count)) }
     if ($failList) { Say-Warn (M SumFail ($failList -join '; ')) }
     if ($reboot)   { Write-Host "`n$(M Reboot)" -ForegroundColor Red }
+    if ($failList) { $exitCode = 2 } elseif ($reboot -and $exitCode -eq 0) { $exitCode = 3010 }
+}
+catch {
+    Say-Warn $_.Exception.Message
+    $exitCode = 1
 }
 finally {
     Write-Host ""
     Say-Info (M Log $logFile)
     Stop-Transcript | Out-Null
+    # Inside finally so the early 'return's above still report a code
+    exit $exitCode
 }

@@ -81,6 +81,17 @@ Or call the script directly:
 powershell -ExecutionPolicy Bypass -File .\PC-Driver-Check.ps1 -ScanOnly
 ```
 
+### Exit codes
+
+Useful when the tool is called from another script or Task Scheduler:
+
+| Code | Meaning |
+|---|---|
+| `0` | Done, or nothing to update / nothing selected |
+| `1` | Error: not run as administrator, or a scan (Windows Update / NVIDIA) failed |
+| `2` | At least one selected driver failed to install |
+| `3010` | Installed, restart required (standard Windows code) |
+
 ## Example output
 
 ```
@@ -166,13 +177,16 @@ Only the standard requests Windows Update makes, and one lookup to nvidia.com wi
 ## Tests
 
 Offline unit tests (version conversion, GPU name matching, accessory filter, selection
-input, TR/EN message keys) need no administrator rights, network or Windows Update:
+input, the NVIDIA lookup against sample service responses, TR/EN message keys and
+placeholders) need no administrator rights, network or Windows Update:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tests\PC-Driver-Check.Tests.ps1
 ```
 
-They run on every push with GitHub Actions on Windows PowerShell 5.1 and PowerShell 7.
+They run on every push and pull request with GitHub Actions on Windows PowerShell 5.1 and
+PowerShell 7, followed by [PSScriptAnalyzer](https://github.com/PowerShell/PSScriptAnalyzer)
+(rules in `PSScriptAnalyzerSettings.psd1`).
 
 ## License
 

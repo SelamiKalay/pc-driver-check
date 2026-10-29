@@ -51,9 +51,72 @@ Check '"abc" -> invalid' ($null -eq (Read-Selection 'abc' 5)) $true
 Check '"0" -> invalid' ($null -eq (Read-Selection '0' 5)) $true
 Check '"2-0" reversed range -> invalid' ($null -eq (Read-Selection '2-0' 5)) $true
 
+Write-Host '--- Get-NvidiaOsId'
+Check 'build 26100 -> Windows 11' (Get-NvidiaOsId 26100) 135
+Check 'build 22000 -> Windows 11' (Get-NvidiaOsId 22000) 135
+Check 'build 19045 -> Windows 10' (Get-NvidiaOsId 19045) 57
+
+Write-Host '--- ConvertTo-NvidiaVersion (bad input)'
+Check 'empty -> null' ($null -eq (ConvertTo-NvidiaVersion '')) $true
+Check '"1.2" -> null' ($null -eq (ConvertTo-NvidiaVersion '1.2')) $true
+
+# NVIDIA servisi icin sahte yanitlar: ayni isimli fonksiyon cmdlet'in onune gecer, aga cikilmaz
+$fakeProducts = @'
+<LookupValueSearch><LookupValues>
+  <LookupValue ParentID="129"><Name>GeForce RTX 4070 Laptop GPU</Name><Value>1007</Value></LookupValue>
+  <LookupValue ParentID="127"><Name>GeForce RTX 4070</Name><Value>1015</Value></LookupValue>
+</LookupValues></LookupValueSearch>
+'@
+$script:fakeDriver = $null
+$script:lastUrl = $null
+function Invoke-WebRequest {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', '', Justification = 'test mock')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'same signature as the cmdlet')]
+    param($Uri, [switch]$UseBasicParsing)
+    [pscustomobject]@{ Content = $fakeProducts }
+}
+function Invoke-RestMethod {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', '', Justification = 'test mock')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'same signature as the cmdlet')]
+    param($Uri, [switch]$UseBasicParsing)
+    $script:lastUrl = $Uri
+    $script:fakeDriver
+}
+function New-FakeDriver($version) {
+    # Servis JSON'u text/html olarak donduruyor, yani Invoke-RestMethod string verir
+    '{"Success":"1","IDS":[{"downloadInfo":{"Version":"' + $version + '","ReleaseDateTime":"Wed Oct 21, 2026",' +
+    '"DownloadURLFileSize":"1.04 GB","DownloadURL":"https://us.download.nvidia.com/Windows/' + $version + '/x.exe"}}]}'
+}
+$gpu = [pscustomobject]@{ Name = 'NVIDIA GeForce RTX 4070 Laptop GPU'; DriverVersion = '32.0.15.5222' }
+
+Write-Host '--- Find-NvidiaDriver (mocked service)'
+$script:fakeDriver = New-FakeDriver '621.01'
+$r = Find-NvidiaDriver $gpu 135
+Check 'newer driver -> Update' $r.Status 'Update'
+Check 'installed / latest' "$($r.Installed) -> $($r.Latest)" '552.22 -> 621.01'
+Check 'product ids in URL' ($script:lastUrl -match 'psid=129&pfid=1007&') $true
+Check 'osID in URL' ($script:lastUrl -match '&osID=135&') $true
+
+$script:fakeDriver = New-FakeDriver '552.22'
+Check 'same driver -> Current' (Find-NvidiaDriver $gpu 57).Status 'Current'
+$script:fakeDriver = New-FakeDriver '546.33'
+Check 'older driver -> Current (no downgrade)' (Find-NvidiaDriver $gpu 57).Status 'Current'
+
+$script:fakeDriver = '{"Success":"0","IDS":[]}'
+Check 'no driver for GPU/OS -> NoMatch' (Find-NvidiaDriver $gpu 57).Status 'NoMatch'
+
+$other = [pscustomobject]@{ Name = 'NVIDIA GeForce GTX 9999'; DriverVersion = '32.0.15.5222' }
+Check 'unknown model -> NoMatch' (Find-NvidiaDriver $other 57).Status 'NoMatch'
+
+$noVer = [pscustomobject]@{ Name = 'NVIDIA GeForce RTX 4070'; DriverVersion = $null }
+Check 'unreadable version -> NoVersion' (Find-NvidiaDriver $noVer 57).Status 'NoVersion'
+
 Write-Host '--- Messages'
 $missing = @($Msg.tr.Keys | Where-Object { -not $Msg.en.ContainsKey($_) }) + @($Msg.en.Keys | Where-Object { -not $Msg.tr.ContainsKey($_) })
 Check 'tr/en have the same keys' ($missing -join ' ') ''
+$holes = { param($s) (([regex]::Matches($s, '\{\d+\}') | ForEach-Object Value | Sort-Object -Unique) -join '') }
+$mismatch = @($Msg.tr.Keys | Where-Object { $Msg.en.ContainsKey($_) -and (& $holes $Msg.tr[$_]) -ne (& $holes $Msg.en[$_]) })
+Check 'tr/en have the same {n} placeholders' ($mismatch -join ' ') ''
 
 Write-Host "=== FAILED: $fail"
 exit [int]($fail -gt 0)

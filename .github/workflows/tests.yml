@@ -21,3 +21,12 @@ jobs:
       - name: Birim testleri (PowerShell 7)
         shell: pwsh
         run: ./tests/PC-Driver-Check.Tests.ps1
+
+      # Hata/uyari varsa adim basarisiz olur (kurallar: PSScriptAnalyzerSettings.psd1)
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $r = Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+          $r | Format-Table -AutoSize | Out-String -Width 200
+          if ($r) { exit 1 }

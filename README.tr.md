@@ -81,6 +81,17 @@ Ya da script'i doğrudan çalıştır:
 powershell -ExecutionPolicy Bypass -File .\PC-Driver-Check.ps1 -ScanOnly
 ```
 
+### Çıkış kodları
+
+Araç başka bir script'ten ya da Görev Zamanlayıcı'dan çağrıldığında işe yarar:
+
+| Kod | Anlamı |
+|---|---|
+| `0` | Tamamlandı ya da güncellenecek / seçilen bir şey yok |
+| `1` | Hata: yönetici olarak çalıştırılmadı ya da bir tarama (Windows Update / NVIDIA) başarısız oldu |
+| `2` | Seçilen sürücülerden en az biri kurulamadı |
+| `3010` | Kuruldu, yeniden başlatma gerekli (Windows'un standart kodu) |
+
 ## Örnek çıktı
 
 ```
@@ -166,13 +177,16 @@ Sadece Windows Update'in standart istekleri ve ekran kartı modelinle nvidia.com
 ## Testler
 
 Çevrimdışı birim testleri (sürüm dönüşümü, ekran kartı adı eşleştirme, aksesuar filtresi,
-seçim girişi, TR/EN mesaj anahtarları) yönetici izni, internet ya da Windows Update gerektirmez:
+seçim girişi, örnek servis yanıtlarıyla NVIDIA sorgusu, TR/EN mesaj anahtarları ve yer
+tutucuları) yönetici izni, internet ya da Windows Update gerektirmez:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tests\PC-Driver-Check.Tests.ps1
 ```
 
-Her push'ta GitHub Actions ile Windows PowerShell 5.1 ve PowerShell 7 üzerinde çalışır.
+Her push ve pull request'te GitHub Actions ile Windows PowerShell 5.1 ve PowerShell 7 üzerinde
+çalışır, ardından [PSScriptAnalyzer](https://github.com/PowerShell/PSScriptAnalyzer) kontrolü
+yapılır (kurallar `PSScriptAnalyzerSettings.psd1` içinde).
 
 ## Lisans
 
