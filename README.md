@@ -77,7 +77,7 @@ Check-Drivers.bat -ScanOnly          :: only list updates, install nothing
 Check-Drivers.bat -IncludeDevices    :: also show phone / USB accessory drivers
 Check-Drivers.bat -NoBackup          :: skip the driver backup before installing
 Check-Drivers.bat -NvidiaStudio      :: NVIDIA Studio drivers instead of Game Ready
-```
+Check-Drivers.bat -ScanOnly -Report html   :: also save an HTML report next to the log```
 
 Or call the script directly:
 
@@ -85,8 +85,32 @@ Or call the script directly:
 powershell -ExecutionPolicy Bypass -File .\PC-Driver-Check.ps1 -ScanOnly
 ```
 
-### Exit codes
+### Unattended use
 
+| Option | Meaning |
+|---|---|
+| `-All` | Install everything that is listed, without asking |
+| `-Install 1,3` | Install these list numbers without asking (`1-3` also works) |
+| `-Yes` | If no restore point can be created, install anyway. Without it, `-All` / `-Install` **cancel** in that case (exit code 1) |
+| `-Report json` / `-Report html` | Save a report (PC, hardware health, updates, warnings, results) next to the log file |
+
+List numbers belong to *that* run: if Windows Update offers a new driver, number 3 can be a different driver next time. For scheduled runs prefer `-All` together with an ignore list. Example for an administrator terminal or Task Scheduler (*Run with highest privileges*):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\Tools\PC-Driver-Check\PC-Driver-Check.ps1 -All -Report json
+```
+
+### Ignore list
+
+Create `PC-Driver-Check.config.json` next to the script (see `PC-Driver-Check.config.example.json`). Each entry is a title pattern, `*` matches anything; case does not matter:
+
+```json
+{ "ignore": [ "*ComputeAccelerator*", "Realtek*Extension*" ] }
+```
+
+Matching updates are hidden from the list (and from `-All`); the tool says how many were hidden. If the file is not valid JSON, a warning is shown and nothing is ignored.
+
+### Exit codes
 Useful when the tool is called from another script or Task Scheduler:
 
 | Code | Meaning |
@@ -192,7 +216,7 @@ Then restart. If Windows keeps picking the newer driver, use **Device Manager â†
 - Fixing hardware: RAM, disk and device warnings are information only
 - Manufacturer utilities (laptop control centers, RGB software, etc.)
 - Windows feature or security updates (use Windows Update for those)
-- Running in the background or on a schedule â€” it only runs when you start it
+- Running in the background by itself: it only runs when you (or a task you set up) start it
 
 ## FAQ
 

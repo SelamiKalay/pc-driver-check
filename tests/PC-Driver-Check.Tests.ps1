@@ -236,6 +236,50 @@ $pd = Get-Acl -LiteralPath $env:ProgramData
 $sidType = [Security.Principal.SecurityIdentifier]
 Check 'real %ProgramData% ACL is not trusted' (Test-TrustedAcl $pd.GetOwner($sidType).Value $pd.GetAccessRules($true, $true, $sidType)) $false
 
+Write-Host '--- Get-ArgConflict'
+Check 'nothing set' ($null -eq (Get-ArgConflict $false '' $false)) $true
+Check '-All alone' ($null -eq (Get-ArgConflict $false '' $true)) $true
+Check '-ScanOnly + -All' (Get-ArgConflict $true '' $true) '-ScanOnly, -All'
+Check '-Install + -All' (Get-ArgConflict $false '1,2' $true) '-Install, -All'
+
+Write-Host '--- Read-Config'
+$tmp = Join-Path ([IO.Path]::GetTempPath()) "pcdc-test-$PID"
+New-Item -ItemType Directory $tmp -Force | Out-Null
+$cfg = Join-Path $tmp 'PC-Driver-Check.config.json'
+Check 'missing file -> no patterns' (Read-Config $cfg).Ignore.Count 0
+[IO.File]::WriteAllText($cfg, '{ "ignore": [ "*ComputeAccelerator*", "", "Realtek*" ] }')
+Check 'patterns, empty entries dropped' (Read-Config $cfg).Ignore @('*ComputeAccelerator*', 'Realtek*')
+[IO.File]::WriteAllText($cfg, '{ "ignore": "*Bluetooth*" }')
+Check 'single string -> one pattern' (Read-Config $cfg).Ignore '*Bluetooth*'
+[IO.File]::WriteAllText($cfg, '{ "ignore": [ "*broken" ')
+$threw = $false; try { [void](Read-Config $cfg) } catch { $threw = $true }
+Check 'invalid JSON -> error (not silently empty)' $threw $true
+Remove-Item $tmp -Recurse -Force
+
+Write-Host '--- Test-Ignored'
+Check 'wildcard match' (Test-Ignored 'Intel Corporation ComputeAccelerator Driver Update' @('*ComputeAccelerator*')) $true
+Check 'no match' (Test-Ignored 'Realtek Audio' @('*ComputeAccelerator*')) $false
+Check 'upper-case title (Turkish I)' (Test-Ignored 'INTEL BLUETOOTH DRIVER' @('*intel*bluetooth*')) $true
+Check 'no patterns' (Test-Ignored 'Anything' @()) $false
+
+Write-Host '--- ConvertTo-ReportHtml'
+$script:Lang = 'en'
+$rep = [ordered]@{
+    Date = '2026-10-30T10:00:00'; ExitCode = 0
+    Pc = [ordered]@{ Model = 'Test PC'; Windows = 'Windows 11'; Cpu = 'CPU'; Gpus = @([ordered]@{ Name = 'GPU <b>'; DriverVersion = '1.0' }) }
+    Memory = [pscustomobject]@{ TotalGB = 32; Type = 'DDR5'; Count = 2; Slots = 2; Rated = 5600; Actual = 5600 }
+    Disks = @(); ProblemDevices = @()
+    Updates = @([ordered]@{ Source = 'WU'; Title = 'Evil <script>alert(1)</script> & Co'; Class = 'USB'; Date = '2026-10-01'; Size = '1 MB' })
+    Ignored = @(); Warnings = @('disk is hot'); Installed = @(); Failed = @(); RebootRequired = $false
+}
+$html = ConvertTo-ReportHtml $rep
+Check 'update title is HTML-encoded' ($html.Contains('Evil &lt;script&gt;alert(1)&lt;/script&gt; &amp; Co')) $true
+Check 'no raw <script> from data' ($html -notmatch '<script') $true
+Check 'GPU name encoded' ($html.Contains('GPU &lt;b&gt;')) $true
+Check 'warnings listed' ($html.Contains('<li>disk is hot</li>')) $true
+Check 'empty sections say "none"' ($html.Contains('<p class="none">none</p>')) $true
+Check 'utf-8 + lang' ($html -match '<meta charset="utf-8">' -and $html -match '<html lang="en">') $true
+
 Write-Host '--- Messages'
 $missing = @($Msg.tr.Keys | Where-Object { -not $Msg.en.ContainsKey($_) }) + @($Msg.en.Keys | Where-Object { -not $Msg.tr.ContainsKey($_) })
 Check 'tr/en have the same keys' ($missing -join ' ') ''

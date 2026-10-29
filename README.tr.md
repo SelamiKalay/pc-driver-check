@@ -77,7 +77,7 @@ Check-Drivers.bat -ScanOnly          :: sadece listele, hiçbir şey kurma
 Check-Drivers.bat -IncludeDevices    :: telefon / USB aksesuar sürücülerini de göster
 Check-Drivers.bat -NoBackup          :: kurulumdan önce sürücü yedeği alma
 Check-Drivers.bat -NvidiaStudio      :: Game Ready yerine NVIDIA Studio sürücüleri
-```
+Check-Drivers.bat -ScanOnly -Report html   :: kayıt dosyasının yanına HTML rapor da kaydet```
 
 Ya da script'i doğrudan çalıştır:
 
@@ -85,8 +85,32 @@ Ya da script'i doğrudan çalıştır:
 powershell -ExecutionPolicy Bypass -File .\PC-Driver-Check.ps1 -ScanOnly
 ```
 
-### Çıkış kodları
+### Gözetimsiz kullanım
 
+| Seçenek | Anlamı |
+|---|---|
+| `-All` | Listelenen her şeyi sormadan kur |
+| `-Install 1,3` | Bu numaraları sormadan kur (`1-3` de olur) |
+| `-Yes` | Geri yükleme noktası oluşturulamazsa yine de kur. Bu seçenek yoksa `-All` / `-Install` bu durumda **iptal eder** (çıkış kodu 1) |
+| `-Report json` / `-Report html` | Kayıt dosyasının yanına rapor kaydet (bilgisayar, donanım sağlığı, güncellemeler, uyarılar, sonuçlar) |
+
+Liste numaraları *o çalıştırmaya* aittir: Windows Update yeni bir sürücü sunarsa bir sonraki sefer 3 numara başka bir sürücü olabilir. Zamanlanmış çalıştırmalarda yoksayma listesiyle birlikte `-All` tercih et. Yönetici terminali ya da Görev Zamanlayıcı (*En yüksek ayrıcalıklarla çalıştır*) için örnek:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\Tools\PC-Driver-Check\PC-Driver-Check.ps1 -All -Report json
+```
+
+### Yoksayma listesi
+
+Script'in yanına `PC-Driver-Check.config.json` dosyası oluştur (örnek: `PC-Driver-Check.config.example.json`). Her satır bir başlık desenidir, `*` her şeyle eşleşir; büyük/küçük harf fark etmez:
+
+```json
+{ "ignore": [ "*ComputeAccelerator*", "Realtek*Extension*" ] }
+```
+
+Eşleşen güncellemeler listeden (ve `-All`'dan) gizlenir; araç kaç tanesinin gizlendiğini yazar. Dosya geçerli bir JSON değilse uyarı verilir ve hiçbir şey yoksayılmaz.
+
+### Çıkış kodları
 Araç başka bir script'ten ya da Görev Zamanlayıcı'dan çağrıldığında işe yarar:
 
 | Kod | Anlamı |
@@ -192,7 +216,7 @@ Sonra yeniden başlat. Windows yine yeni sürücüyü seçerse: **Aygıt Yöneti
 - Donanım onarımı: RAM, disk ve aygıt uyarıları sadece bilgi amaçlıdır
 - Üretici yazılımları (laptop kontrol merkezleri, RGB yazılımları vb.)
 - Windows özellik ya da güvenlik güncellemeleri (onlar için Windows Update'i kullan)
-- Arka planda ya da zamanlanmış çalışma: sadece sen başlattığında çalışır
+- Kendi kendine arka planda çalışma: sadece sen (ya da senin kurduğun bir görev) başlattığında çalışır
 
 ## SSS
 

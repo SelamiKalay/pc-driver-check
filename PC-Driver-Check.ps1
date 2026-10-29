@@ -23,20 +23,43 @@
     Do not back up the current drivers of the devices being updated
     (by default they are exported to %ProgramData%\PC-Driver-Check\backups).
 
+.PARAMETER Install
+    Install these list numbers without asking, e.g. "1,3" or "1-3". Numbers follow the
+    list of this run, so for scheduled runs -All plus an ignore list is safer.
+
+.PARAMETER All
+    Install everything that is listed, without asking.
+
+.PARAMETER Yes
+    If no restore point can be created, continue anyway instead of asking (interactive)
+    or cancelling (with -Install / -All).
+
+.PARAMETER Report
+    Also save a json or html report next to the log file.
+
 .NOTES
     Exit codes: 0 = done / nothing to do, 1 = error or incomplete scan,
                 2 = some installs failed, 3010 = installed, restart required.
+    Ignore list: PC-Driver-Check.config.json next to the script, e.g.
+                { "ignore": [ "*ComputeAccelerator*" ] }   (title wildcards)
 
 .EXAMPLE
     .\Check-Drivers.bat
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\PC-Driver-Check.ps1 -ScanOnly
+    powershell -ExecutionPolicy Bypass -File .\PC-Driver-Check.ps1 -ScanOnly -Report html
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File .\PC-Driver-Check.ps1 -All -Report json
 #>
 param(
     [switch]$ScanOnly,
     [switch]$IncludeDevices,
     [switch]$NoBackup,
-    [switch]$NvidiaStudio
+    [switch]$NvidiaStudio,
+    [string]$Install,
+    [switch]$All,
+    [switch]$Yes,
+    [ValidateSet('json', 'html')]
+    [string]$Report
 )
 
 $ErrorActionPreference = 'Stop'
@@ -112,6 +135,17 @@ $Msg = @{
         RpFailed       = 'Geri yükleme noktası oluşturulamadı ({0}).'
         RpContinue     = 'Yine de kurulsun mu? (E/H)'
         Cancelled      = 'İptal edildi.'
+        ArgConflict    = 'Bu seçenekler birlikte kullanılamaz: {0}'
+        InstallInvalid = '-Install "{0}" geçersiz (1-{1} arası numaralar, örnek: 1,3 veya 1-3).'
+        Unattended     = 'Gözetimsiz kurulum, {0} güncelleme seçildi.'
+        RpAbort        = 'Geri yükleme noktası olmadan gözetimsiz kurulum yapılmadı (yine de kurmak için -Yes).'
+        Ignored        = '{0} güncelleme yoksayma listesinde olduğu için gizlendi ({1}).'
+        ConfigBad      = 'Ayar dosyası okunamadı, yok sayıldı ({0}): {1}'
+        ReportSaved    = 'Rapor: {0}'
+        ReportFailed   = 'Rapor yazılamadı: {0}'
+        ReportWarnings = 'Uyarılar'
+        ReportIgnored  = 'Yoksayılanlar'
+        ReportNone     = 'yok'
         BackupCreating = 'Güncellenecek aygıtların mevcut sürücüleri yedekleniyor...'
         BackupOk       = 'Sürücü yedeği ({1}): {0}'
         BackupHow      = 'Geri yüklemek için: pnputil /add-driver "{0}\*.inf" /subdirs /install'
@@ -199,6 +233,17 @@ $Msg = @{
         RpFailed       = 'Could not create a restore point ({0}).'
         RpContinue     = 'Install anyway? (Y/N)'
         Cancelled      = 'Cancelled.'
+        ArgConflict    = 'These options cannot be used together: {0}'
+        InstallInvalid = '-Install "{0}" is not valid (numbers 1-{1}, e.g. 1,3 or 1-3).'
+        Unattended     = 'Unattended install, {0} update(s) selected.'
+        RpAbort        = 'No unattended install without a restore point (add -Yes to install anyway).'
+        Ignored        = '{0} update(s) hidden by the ignore list ({1}).'
+        ConfigBad      = 'Could not read the config file, ignoring it ({0}): {1}'
+        ReportSaved    = 'Report: {0}'
+        ReportFailed   = 'Could not write the report: {0}'
+        ReportWarnings = 'Warnings'
+        ReportIgnored  = 'Ignored'
+        ReportNone     = 'none'
         BackupCreating = 'Backing up the current drivers of the devices being updated...'
         BackupOk       = 'Driver backup ({1}): {0}'
         BackupHow      = 'To restore: pnputil /add-driver "{0}\*.inf" /subdirs /install'
@@ -232,7 +277,10 @@ function M([string]$key) {
 }
 function Say-Ok($m)   { Write-Host "[OK] $m" -ForegroundColor Green }
 function Say-Info($m) { Write-Host "[--] $m" -ForegroundColor Gray }
-function Say-Warn($m) { Write-Host "[!!] $m" -ForegroundColor Yellow }
+function Say-Warn($m) {
+    Write-Host "[!!] $m" -ForegroundColor Yellow
+    if ($null -ne $script:WarnLog) { [void]$script:WarnLog.Add([string]$m) }   # for -Report
+}
 function Say-Head($m) { Write-Host "`n==== $m ====" -ForegroundColor Cyan }
 
 # ------------------------------------------------------------------
@@ -277,6 +325,79 @@ function Read-Selection([string]$text, [int]$count) {
     }
     if (@($picked | Where-Object { $_ -lt 1 -or $_ -gt $count }).Count) { return $null }
     ,@($picked | Sort-Object -Unique)
+}
+
+# Options that cannot be combined -> "-A, -B", or $null
+function Get-ArgConflict([bool]$scanOnly, [string]$install, [bool]$all) {
+    $set = @()
+    if ($scanOnly) { $set += '-ScanOnly' }
+    if ($install)  { $set += '-Install' }
+    if ($all)      { $set += '-All' }
+    if ($set.Count -gt 1) { $set -join ', ' }
+}
+
+# PC-Driver-Check.config.json: { "ignore": [ "*ComputeAccelerator*", ... ] }. Missing file = defaults;
+# invalid JSON throws so the caller can say so instead of silently ignoring nothing.
+function Read-Config([string]$path) {
+    if (-not (Test-Path -LiteralPath $path)) { return [pscustomobject]@{ Ignore = @() } }
+    $c = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+    [pscustomobject]@{ Ignore = @($c.ignore | Where-Object { $_ } | ForEach-Object { [string]$_ }) }
+}
+
+# Title matches an ignore pattern. WildcardPattern + CultureInvariant: plain -like is
+# culture-sensitive ("INTEL" -like "*intel*" is false on Turkish Windows).
+function Test-Ignored([string]$title, [string[]]$patterns) {
+    foreach ($p in $patterns) {
+        if ([Management.Automation.WildcardPattern]::new($p, 'IgnoreCase, CultureInvariant').IsMatch($title)) { return $true }
+    }
+    $false
+}
+
+# Report (New-Report shape) -> self-contained HTML page; every value is HTML-encoded
+function ConvertTo-ReportHtml($r) {
+    $e = { param($s) [Net.WebUtility]::HtmlEncode([string]$s) }
+    $table = {
+        param($rows, [string[]]$cols)
+        $rows = @($rows | Where-Object { $_ })
+        if (-not $rows) { return "<p class=""none"">$(& $e (M ReportNone))</p>" }
+        $h = ($cols | ForEach-Object { "<th>$(& $e $_)</th>" }) -join ''
+        $b = foreach ($row in $rows) { '<tr>' + (($cols | ForEach-Object { "<td>$(& $e $row.$_)</td>" }) -join '') + '</tr>' }
+        "<table><tr>$h</tr>$($b -join '')</table>"
+    }
+    $list = { param($items) $items = @($items | Where-Object { $_ }); if (-not $items) { "<p class=""none"">$(& $e (M ReportNone))</p>" } else { '<ul>' + (($items | ForEach-Object { "<li>$(& $e $_)</li>" }) -join '') + '</ul>' } }
+    @"
+<!doctype html>
+<html lang="$Lang"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PC-Driver-Check $(& $e $r.Date)</title>
+<style>
+body { font: 14px/1.5 'Segoe UI', sans-serif; margin: 24px; color: #1b1b1b; background: #fff; }
+h1 { font-size: 20px; } h2 { font-size: 16px; margin-top: 28px; border-bottom: 1px solid #ddd; }
+table { border-collapse: collapse; margin: 8px 0; } th, td { border: 1px solid #ddd; padding: 4px 10px; text-align: left; }
+th { background: #f3f3f3; } .none { color: #777; } li { margin: 2px 0; }
+@media (prefers-color-scheme: dark) { body { background: #1e1e1e; color: #ddd; } th { background: #2b2b2b; } th, td, h2 { border-color: #444; } }
+</style></head><body>
+<h1>$(& $e (M Title))</h1>
+<p>$(& $e $r.Date) &middot; exit code $(& $e $r.ExitCode)</p>
+<h2>$(& $e (M PcInfo))</h2>
+$(& $table @($r.Pc) @('Model', 'Windows', 'Cpu'))
+$(& $table $r.Pc.Gpus @('Name', 'DriverVersion'))
+<h2>$(& $e (M Health))</h2>
+$(& $table @($r.Memory) @('TotalGB', 'Type', 'Count', 'Slots', 'Rated', 'Actual'))
+$(& $table $r.Disks @('Name', 'Bus', 'Media', 'SizeGB', 'Firmware', 'Health', 'Wear', 'Temperature'))
+$(& $table $r.ProblemDevices @('Name', 'Code', 'HardwareId'))
+<h2>$(& $e (M Found))</h2>
+$(& $table $r.Updates @('Source', 'Title', 'Class', 'Date', 'Size'))
+<h2>$(& $e (M ReportIgnored))</h2>
+$(& $list $r.Ignored)
+<h2>$(& $e (M ReportWarnings))</h2>
+$(& $list $r.Warnings)
+<h2>$(& $e (M Summary))</h2>
+<p>$(& $e (M SumOk (@($r.Installed).Count)))</p>
+$(& $list $r.Installed)
+$(if (@($r.Failed).Count) { "<p>$(& $e (M SumFail (@($r.Failed) -join '; ')))</p>" })
+$(if ($r.RebootRequired) { "<p><strong>$(& $e (M Reboot))</strong></p>" })
+</body></html>
+"@
 }
 
 # AMD GPU name -> Adrenalin branch. RDNA (RX 5000-9000, Radeon 6x0M-8x0M iGPUs) share one
@@ -634,9 +755,18 @@ New-Item -ItemType Directory $logDir -Force | Out-Null
 $logFile = Join-Path $logDir "PC-Driver-Check_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 Start-Transcript $logFile | Out-Null
 $exitCode = 0
+$WarnLog = New-Object Collections.Generic.List[string]   # not $Warnings: names are case-insensitive, $warnings is used below
+$unattended = $All -or $Install
+$okList = @(); $failList = @(); $reboot = $false; $ignored = @()
 
 try {
     Write-Host (M Title) -ForegroundColor White
+    $conflict = Get-ArgConflict $ScanOnly $Install $All
+    if ($conflict) { Say-Warn (M ArgConflict $conflict); $exitCode = 1; return }
+
+    $cfgPath = Join-Path $Root 'PC-Driver-Check.config.json'
+    try { $config = Read-Config $cfgPath }
+    catch { Say-Warn (M ConfigBad (Split-Path $cfgPath -Leaf) $_.Exception.Message); $config = [pscustomobject]@{ Ignore = @() } }
 
     # --- This PC (different on every machine, detected at runtime) ---
     Say-Head (M PcInfo)
@@ -653,11 +783,12 @@ try {
     Say-Head (M Health)
     try {
         $mem = Get-MemoryInfo
+        $disks = @(Get-DiskInfo)
         Write-Host ("{0,-12} {1}" -f (M Ram), (M RamLine $mem.TotalGB $mem.Type $mem.Count $mem.Slots $mem.Actual))
         if ($mem.Slow)   { Say-Warn (M RamSlow $mem.Actual $mem.Rated) }
         if ($mem.Single) { Say-Info (M RamSingle) }
 
-        foreach ($d in @(Get-DiskInfo)) {
+        foreach ($d in $disks) {
             $health = switch ($d.Health) { 'Healthy' { M DiskHealthy } 'Warning' { M DiskWarning } 'Unhealthy' { M DiskUnhealthy } default { M Unknown } }
             $wear = if ($null -ne $d.Wear -and ($d.Wear -gt 0 -or $d.Bus -eq 'NVMe')) { "%$($d.Wear)" } else { M Unknown }
             $temp = if ($d.Temperature -gt 0) { "$($d.Temperature)°C" } else { M Unknown }
@@ -728,6 +859,15 @@ try {
         $items += $wu
     } catch { Say-Warn (M WuFailed $_.Exception.Message); $exitCode = 1 }
 
+    # --- Ignore list (PC-Driver-Check.config.json) ---
+    if ($config.Ignore) {
+        $ignored = @($items | Where-Object { Test-Ignored $_.Title $config.Ignore })
+        if ($ignored) {
+            Say-Info (M Ignored $ignored.Count (Split-Path $cfgPath -Leaf))
+            $items = @($items | Where-Object { -not (Test-Ignored $_.Title $config.Ignore) })
+        }
+    }
+
     # --- List ---
     if (-not $items) { Say-Ok (M NoUpdates); return }
     Say-Head (M Found)
@@ -742,17 +882,25 @@ try {
     }
     if ($ScanOnly) { Say-Info (M ScanOnlyDone); return }
 
-    # --- Confirm ---
-    do {
-        $sel = Read-Selection (Read-Host "`n$(M Ask)") $items.Count
-        if ($null -eq $sel) { Say-Warn (M AskInvalid) }
-    } while ($null -eq $sel)
-    if ($sel.Count -eq 0) { Say-Info (M NothingChosen); return }
+    # --- Confirm (or -Install / -All) ---
+    if ($unattended) {
+        $sel = if ($All) { ,@(1..$items.Count) } else { Read-Selection $Install $items.Count }
+        if ($null -eq $sel -or $sel.Count -eq 0) { Say-Warn (M InstallInvalid $Install $items.Count); $exitCode = 1; return }
+        Say-Info (M Unattended $sel.Count)
+    } else {
+        do {
+            $sel = Read-Selection (Read-Host "`n$(M Ask)") $items.Count
+            if ($null -eq $sel) { Say-Warn (M AskInvalid) }
+        } while ($null -eq $sel)
+        if ($sel.Count -eq 0) { Say-Info (M NothingChosen); return }
+    }
     $chosen = @($sel | ForEach-Object { $items[$_ - 1] })
 
     # --- Restore point ---
     Say-Info (M RpCreating)
-    if (-not (New-RestorePoint)) {
+    if (-not (New-RestorePoint) -and -not $Yes) {
+        # Unattended: nobody to ask, and installing without a safety net is not a default
+        if ($unattended) { Say-Warn (M RpAbort); $exitCode = 1; return }
         if ((Read-Host (M RpContinue)) -notmatch "^(?i)$(M YesWord)") { Say-Info (M Cancelled); return }
     }
 
@@ -766,7 +914,6 @@ try {
     }
 
     # --- Install ---
-    $okList = @(); $failList = @(); $reboot = $false
     foreach ($it in $chosen) {
         try {
             $r = if ($it.Source -eq 'NVIDIA') { Install-NvidiaDriver $it } else { Install-WUDriver $it }
@@ -794,6 +941,37 @@ catch {
     $exitCode = 1
 }
 finally {
+    # Written here so -ScanOnly, "nothing to do" and errors also get a report
+    if ($Report) {
+        try {
+            $data = [ordered]@{
+                Date           = Get-Date -Format 's'
+                ExitCode       = $exitCode
+                Pc             = [ordered]@{
+                    Model   = "$($cs.Manufacturer) $($cs.Model)".Trim()
+                    Windows = "$($os.Caption) (build $($os.BuildNumber))"
+                    Cpu     = "$($cpu.Name)".Trim()
+                    Gpus    = @($gpus | ForEach-Object { [ordered]@{ Name = $_.Name; DriverVersion = $_.DriverVersion } })
+                }
+                Memory         = $mem
+                Disks          = @($disks)
+                ProblemDevices = @($devs)
+                Updates        = @($items | ForEach-Object {
+                    [ordered]@{ Source = $_.Source; Title = $_.Title; Class = $_.Class
+                                Date = $(if ($_.Date -is [datetime]) { $_.Date.ToString('yyyy-MM-dd') } else { [string]$_.Date })
+                                Size = $(if ($_.SizeMB -is [double]) { '{0:N1} MB' -f $_.SizeMB } else { [string]$_.SizeMB }) } })
+                Ignored        = @($ignored | ForEach-Object { $_.Title })
+                Warnings       = @($WarnLog)
+                Installed      = @($okList)
+                Failed         = @($failList)
+                RebootRequired = $reboot
+            }
+            $reportFile = [IO.Path]::ChangeExtension($logFile, $Report)
+            $text = if ($Report -eq 'json') { $data | ConvertTo-Json -Depth 5 } else { ConvertTo-ReportHtml $data }
+            [IO.File]::WriteAllText($reportFile, $text, (New-Object Text.UTF8Encoding $false))
+            Say-Info (M ReportSaved $reportFile)
+        } catch { Say-Warn (M ReportFailed $_.Exception.Message) }
+    }
     Write-Host ""
     Say-Info (M Log $logFile)
     Stop-Transcript | Out-Null

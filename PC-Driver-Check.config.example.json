@@ -1,0 +1,6 @@
+{
+  "ignore": [
+    "*ComputeAccelerator*",
+    "Realtek*Extension*"
+  ]
+}
